@@ -22,6 +22,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.github import check_repo_ownership, exchange_code_for_token, get_github_user, get_oauth_url
 from app.config import settings
 from app.database import AsyncSessionLocal, get_db
+from app.models.app_setting import get_effective_setting
 from app.models.self_modify_job import SelfModifyJob
 from app.models.user import User
 from app.schemas.self_modify import (
@@ -144,11 +145,13 @@ async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: s
                     raise ValueError("GitHub token required for repo mode.")
                 job.status = "pushing"
                 await db.commit()
+                repo_owner = await get_effective_setting(db, "github_repo_owner", settings.github_repo_owner)
+                repo_name = await get_effective_setting(db, "github_repo_name", settings.github_repo_name)
                 await asyncio.to_thread(
                     modifier.git_push_github,
                     github_token,
-                    settings.github_repo_owner,
-                    settings.github_repo_name,
+                    repo_owner,
+                    repo_name,
                 )
             else:  # local
                 job.status = "restarting"
@@ -170,12 +173,17 @@ async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: s
 
 
 @router.get("/github/authorize", response_model=GithubAuthorizeResponse)
-async def github_authorize(current_user: User = Depends(get_current_user)) -> GithubAuthorizeResponse:
-    if not settings.github_client_id:
+async def github_authorize(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> GithubAuthorizeResponse:
+    client_id = await get_effective_setting(db, "github_client_id", settings.github_client_id)
+    if not client_id:
         raise HTTPException(status_code=501, detail="GitHub OAuth is not configured on this instance.")
+    callback_url = await get_effective_setting(db, "github_callback_url", settings.github_callback_url)
     state = secrets.token_urlsafe(20)
     _oauth_states[state] = str(current_user.id)
-    return GithubAuthorizeResponse(url=get_oauth_url(state), state=state)
+    return GithubAuthorizeResponse(url=get_oauth_url(state, client_id, callback_url), state=state)
 
 
 @router.post("/github/exchange", response_model=GithubStatusResponse)
@@ -188,10 +196,14 @@ async def github_exchange(
     if expected_user_id != str(current_user.id):
         raise HTTPException(status_code=400, detail="Invalid or expired OAuth state.")
 
-    token = await exchange_code_for_token(body.code)
+    client_id = await get_effective_setting(db, "github_client_id", settings.github_client_id)
+    client_secret = await get_effective_setting(db, "github_client_secret", settings.github_client_secret)
+    token = await exchange_code_for_token(body.code, client_id, client_secret)
     gh_user = await get_github_user(token)
     login: str = gh_user["login"]
-    is_owner = await check_repo_ownership(token, settings.github_repo_owner, settings.github_repo_name)
+    repo_owner = await get_effective_setting(db, "github_repo_owner", settings.github_repo_owner)
+    repo_name = await get_effective_setting(db, "github_repo_name", settings.github_repo_name)
+    is_owner = await check_repo_ownership(token, repo_owner, repo_name)
 
     current_user.github_login = login
     current_user.github_access_token = token
