@@ -4,32 +4,30 @@ from urllib.parse import urlencode
 
 import httpx
 
-from app.config import settings
-
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_API_URL = "https://api.github.com"
 
 
-def get_oauth_url(state: str) -> str:
+def get_oauth_url(state: str, client_id: str, callback_url: str) -> str:
     """Build the GitHub OAuth authorization URL."""
     params = {
-        "client_id": settings.github_client_id,
-        "redirect_uri": settings.github_callback_url,
+        "client_id": client_id,
+        "redirect_uri": callback_url,
         "scope": "repo",
         "state": state,
     }
     return f"{GITHUB_AUTHORIZE_URL}?{urlencode(params)}"
 
 
-async def exchange_code_for_token(code: str) -> str:
+async def exchange_code_for_token(code: str, client_id: str, client_secret: str) -> str:
     """Exchange a GitHub OAuth code for an access token."""
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             GITHUB_TOKEN_URL,
             json={
-                "client_id": settings.github_client_id,
-                "client_secret": settings.github_client_secret,
+                "client_id": client_id,
+                "client_secret": client_secret,
                 "code": code,
             },
             headers={"Accept": "application/json"},

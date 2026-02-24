@@ -24,6 +24,41 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+// ─── Setup & App Settings ────────────────────────────────────────────────────
+
+export interface SetupStatus {
+  setup_required: boolean;
+}
+
+export interface AppSettings {
+  anthropic_api_key: string | null;
+  openai_api_key: string | null;
+  google_api_key: string | null;
+  github_client_id: string | null;
+  github_client_secret: string | null;
+  github_callback_url: string | null;
+  github_repo_owner: string | null;
+  github_repo_name: string | null;
+}
+
+export const getSetupStatus = (): Promise<SetupStatus> => request('/setup/status');
+
+export async function runSetup(
+  email: string,
+  password: string,
+  settings?: Record<string, string>,
+): Promise<TokenResponse> {
+  return request('/setup', {
+    method: 'POST',
+    body: JSON.stringify({ email, password, settings: settings && Object.keys(settings).length ? settings : null }),
+  });
+}
+
+export const getAppSettings = (): Promise<AppSettings> => request('/settings');
+
+export const updateAppSettings = (data: Partial<AppSettings>): Promise<AppSettings> =>
+  request('/settings', { method: 'PATCH', body: JSON.stringify(data) });
+
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
 export interface TokenResponse {

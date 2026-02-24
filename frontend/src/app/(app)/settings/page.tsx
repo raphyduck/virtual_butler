@@ -2,17 +2,142 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
+  AppSettings,
   cancelModifyJob,
   confirmModifyJob,
   disconnectGithub,
   FileChangeOut,
+  getAppSettings,
   getGithubAuthorizeUrl,
   getGithubStatus,
   getModifyJob,
   GithubStatus,
   ModifyJob,
   startModifyJob,
+  updateAppSettings,
 } from '@/lib/api';
+
+// ── Application configuration section ────────────────────────────────────────
+
+const MASKED = '***';
+
+function isMasked(v: string | null) {
+  return v === MASKED;
+}
+
+function AppConfigSection() {
+  const [cfg, setCfg] = useState<AppSettings | null>(null);
+  const [form, setForm] = useState<Partial<AppSettings>>({});
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAppSettings()
+      .then((data) => {
+        setCfg(data);
+        setForm(data);
+      })
+      .catch(() => setError('Could not load settings.'));
+  }, []);
+
+  function set(key: keyof AppSettings, value: string) {
+    setForm((f) => ({ ...f, [key]: value }));
+    setSaved(false);
+  }
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      // Only send fields that changed and are not the masked placeholder
+      const patch: Partial<AppSettings> = {};
+      for (const k of Object.keys(form) as (keyof AppSettings)[]) {
+        const v = form[k];
+        if (v && !isMasked(v) && v !== cfg?.[k]) {
+          (patch as Record<string, string>)[k] = v;
+        }
+      }
+      if (Object.keys(patch).length === 0) {
+        setSaved(true);
+        return;
+      }
+      const updated = await updateAppSettings(patch);
+      setCfg(updated);
+      setForm(updated);
+      setSaved(true);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to save settings.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!cfg) return <p className="text-sm text-gray-400">Loading…</p>;
+
+  const field = (key: keyof AppSettings, label: string, placeholder = '', secret = false) => (
+    <div key={key}>
+      <label className="mb-1 block text-xs font-medium text-gray-600">{label}</label>
+      <input
+        type={secret ? 'password' : 'text'}
+        value={form[key] ?? ''}
+        onChange={(e) => set(key, e.target.value)}
+        placeholder={isMasked(cfg[key]) ? '(already set — type to replace)' : placeholder}
+        className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    </div>
+  );
+
+  return (
+    <section className="rounded-lg border border-gray-200 p-6">
+      <h2 className="mb-1 text-base font-semibold">Application Configuration</h2>
+      <p className="mb-4 text-sm text-gray-500">
+        API keys and OAuth credentials are stored in the database and take priority over environment variables.
+        Secret values are never returned in full — type a new value to replace.
+      </p>
+
+      {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+
+      <div className="space-y-6">
+        {/* AI providers */}
+        <div>
+          <h3 className="mb-3 text-sm font-semibold text-gray-700">AI Provider Keys</h3>
+          <div className="space-y-3">
+            {field('anthropic_api_key', 'Anthropic API key', 'sk-ant-…', true)}
+            {field('openai_api_key', 'OpenAI API key', 'sk-…', true)}
+            {field('google_api_key', 'Google Gemini API key', '', true)}
+          </div>
+        </div>
+
+        {/* GitHub OAuth App */}
+        <div>
+          <h3 className="mb-3 text-sm font-semibold text-gray-700">GitHub OAuth App</h3>
+          <p className="mb-3 text-xs text-gray-500">
+            Required to connect GitHub accounts and enable repo mode.
+          </p>
+          <div className="space-y-3">
+            {field('github_client_id', 'Client ID', 'Ov23li…')}
+            {field('github_client_secret', 'Client Secret', '', true)}
+            {field('github_callback_url', 'Callback URL', 'http://localhost:3000/github/callback')}
+            {field('github_repo_owner', 'Repo owner', 'raphyduck')}
+            {field('github_repo_name', 'Repo name', 'virtual_butler')}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 flex items-center gap-3">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save changes'}
+        </button>
+        {saved && <span className="text-sm text-green-600">Saved.</span>}
+      </div>
+    </section>
+  );
+}
 
 // ── GitHub section ────────────────────────────────────────────────────────────
 
@@ -376,6 +501,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-bold">Settings</h1>
+      <AppConfigSection />
       <GithubSection />
       <SelfModifySection />
     </div>
