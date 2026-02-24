@@ -59,7 +59,7 @@ async def websocket_session(websocket: WebSocket, session_id: uuid.UUID) -> None
                 payload = json.loads(raw)
                 user_message: str = payload["content"]
             except (json.JSONDecodeError, KeyError):
-                await send({"type": "error", "detail": "Invalid payload — expected {\"content\": \"...\"}"})
+                await send({"type": "error", "detail": 'Invalid payload — expected {"content": "..."}'})
                 continue
 
             async with AsyncSessionLocal() as db:

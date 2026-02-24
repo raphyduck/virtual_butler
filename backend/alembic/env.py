@@ -21,8 +21,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import all models so Alembic can detect them for autogenerate
-from app.database import Base  # noqa: E402
 import app.models  # noqa: E402, F401  — registers all ORM classes
+from app.database import Base  # noqa: E402
 
 target_metadata = Base.metadata
 

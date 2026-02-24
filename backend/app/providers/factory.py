@@ -27,15 +27,19 @@ def get_provider(provider_name: str, model: str, provider_config_json: str | Non
     match provider_name:
         case "anthropic":
             from app.providers.anthropic import AnthropicProvider
+
             return AnthropicProvider(config)
         case "openai":
             from app.providers.openai import OpenAIProvider
+
             return OpenAIProvider(config)
         case "google":
             from app.providers.google import GoogleProvider
+
             return GoogleProvider(config)
         case "ollama":
             from app.providers.ollama import OllamaProvider
+
             return OllamaProvider(config)
         case _:
             raise ValueError(f"Unknown provider: {provider_name!r}")

@@ -21,15 +21,11 @@ def _create_token(subject: str, kind: str, expires_delta: timedelta) -> str:
 
 
 def create_access_token(user_id: str) -> str:
-    return _create_token(
-        user_id, _ACCESS, timedelta(minutes=settings.access_token_expire_minutes)
-    )
+    return _create_token(user_id, _ACCESS, timedelta(minutes=settings.access_token_expire_minutes))
 
 
 def create_refresh_token(user_id: str) -> str:
-    return _create_token(
-        user_id, _REFRESH, timedelta(days=settings.refresh_token_expire_days)
-    )
+    return _create_token(user_id, _REFRESH, timedelta(days=settings.refresh_token_expire_days))
 
 
 def decode_token(token: str, expected_kind: str = _ACCESS) -> str:

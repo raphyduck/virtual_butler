@@ -13,7 +13,7 @@ class ChatMessage:
 class ProviderConfig:
     model: str
     api_key: str | None = None
-    base_url: str | None = None   # used by Ollama
+    base_url: str | None = None  # used by Ollama
     extra: dict = field(default_factory=dict)
 
 

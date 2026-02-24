@@ -39,9 +39,7 @@ class AbilitySessionHandler:
         if session is None:
             raise SessionNotFound(f"Session {session_id} not found")
 
-        ability_result = await self._db.execute(
-            select(Ability).where(Ability.id == session.ability_id)
-        )
+        ability_result = await self._db.execute(select(Ability).where(Ability.id == session.ability_id))
         ability = ability_result.scalar_one_or_none()
         if ability is None:
             raise SessionNotFound(f"Ability for session {session_id} not found")
@@ -55,11 +53,7 @@ class AbilitySessionHandler:
             .order_by(Message.created_at)
         )
         messages = result.scalars().all()
-        return [
-            ChatMessage(role=m.role, content=m.content)
-            for m in messages
-            if m.role in ("user", "assistant")
-        ]
+        return [ChatMessage(role=m.role, content=m.content) for m in messages if m.role in ("user", "assistant")]
 
     async def _save_message(self, session_id: str, role: str, content: str) -> Message:
         msg = Message(session_id=session_id, role=role, content=content)  # type: ignore[arg-type]

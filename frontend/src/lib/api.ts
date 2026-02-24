@@ -28,21 +28,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export interface TokenResponse {
   access_token: string;
+  refresh_token: string;
   token_type: string;
 }
 
 export async function login(email: string, password: string): Promise<TokenResponse> {
-  const form = new URLSearchParams({ username: email, password });
-  const res = await fetch(`${BASE}/auth/token`, {
+  return request('/auth/login', {
     method: 'POST',
-    body: form,
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: JSON.stringify({ email, password }),
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new ApiError(res.status, body.detail ?? res.statusText);
-  }
-  return res.json();
 }
 
 export async function register(email: string, password: string): Promise<{ id: string; email: string }> {
@@ -73,10 +67,10 @@ export interface Ability {
 export type AbilityCreate = Omit<Ability, 'id' | 'user_id' | 'created_at' | 'updated_at'>;
 export type AbilityUpdate = Partial<AbilityCreate>;
 
-export const listAbilities = (): Promise<Ability[]> => request('/abilities/');
+export const listAbilities = (): Promise<Ability[]> => request('/abilities');
 export const getAbility = (id: string): Promise<Ability> => request(`/abilities/${id}`);
 export const createAbility = (data: AbilityCreate): Promise<Ability> =>
-  request('/abilities/', { method: 'POST', body: JSON.stringify(data) });
+  request('/abilities', { method: 'POST', body: JSON.stringify(data) });
 export const updateAbility = (id: string, data: AbilityUpdate): Promise<Ability> =>
   request(`/abilities/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const deleteAbility = (id: string): Promise<void> =>
