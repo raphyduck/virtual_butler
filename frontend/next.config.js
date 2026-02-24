@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
+  // Only use standalone output for production builds (docker build --target production).
+  // Setting output:'standalone' in dev mode breaks route discovery — all pages 404 because
+  // Next.js looks for a pre-built standalone bundle that doesn't exist during `next dev`.
+  ...(process.env.NODE_ENV === 'production' && { output: 'standalone' }),
   async rewrites() {
     return [
       {
