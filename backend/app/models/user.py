@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import Boolean, DateTime, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,6 +19,14 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    # GitHub OAuth (self-modification feature)
+    github_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    github_access_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    github_is_repo_owner: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     abilities: Mapped[list["Ability"]] = relationship(  # noqa: F821
         "Ability", back_populates="user", cascade="all, delete-orphan"
+    )
+    self_modify_jobs: Mapped[list["SelfModifyJob"]] = relationship(  # noqa: F821
+        "SelfModifyJob", back_populates="user", cascade="all, delete-orphan"
     )

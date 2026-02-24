@@ -101,3 +101,65 @@ export const listSessions = (abilityId: string): Promise<Session[]> =>
   request(`/abilities/${abilityId}/sessions`);
 export const getMessages = (abilityId: string, sessionId: string): Promise<ChatMessage[]> =>
   request(`/abilities/${abilityId}/sessions/${sessionId}/messages`);
+
+// ─── Self-modification ────────────────────────────────────────────────────────
+
+export interface FileChangeOut {
+  path: string;
+  action: 'create' | 'modify' | 'delete';
+  content: string | null;
+}
+
+export interface ModifyPlan {
+  changes: FileChangeOut[];
+  commit_message: string;
+}
+
+export interface ModifyJob {
+  id: string;
+  status: string;
+  mode: string;
+  instruction: string;
+  provider: string;
+  model: string;
+  plan: ModifyPlan | null;
+  error: string | null;
+  commit_sha: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface GithubStatus {
+  connected: boolean;
+  login: string | null;
+  is_repo_owner: boolean;
+}
+
+export const getGithubStatus = (): Promise<GithubStatus> =>
+  request('/self/github/status');
+
+export const getGithubAuthorizeUrl = (): Promise<{ url: string; state: string }> =>
+  request('/self/github/authorize');
+
+export const exchangeGithubCode = (code: string, state: string): Promise<GithubStatus> =>
+  request('/self/github/exchange', { method: 'POST', body: JSON.stringify({ code, state }) });
+
+export const disconnectGithub = (): Promise<void> =>
+  request('/self/github/disconnect', { method: 'DELETE' });
+
+export const startModifyJob = (
+  instruction: string,
+  mode: 'repo' | 'local',
+  provider = 'anthropic',
+  model = 'claude-sonnet-4-6',
+): Promise<ModifyJob> =>
+  request('/self/modify', { method: 'POST', body: JSON.stringify({ instruction, mode, provider, model }) });
+
+export const getModifyJob = (jobId: string): Promise<ModifyJob> =>
+  request(`/self/modify/${jobId}`);
+
+export const confirmModifyJob = (jobId: string): Promise<ModifyJob> =>
+  request(`/self/modify/${jobId}/confirm`, { method: 'POST' });
+
+export const cancelModifyJob = (jobId: string): Promise<ModifyJob> =>
+  request(`/self/modify/${jobId}/cancel`, { method: 'POST' });

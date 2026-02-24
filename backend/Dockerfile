@@ -18,6 +18,9 @@ RUN uv venv .venv && \
 # ─── Production ───────────────────────────────────────────────────────────────
 FROM base AS production
 
+# git is required by the self-modification engine (commit / push operations)
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /app/.venv .venv
 COPY . .
 RUN chmod +x entrypoint.sh

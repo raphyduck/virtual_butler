@@ -20,5 +20,15 @@ class Settings(BaseSettings):
     app_name: str = "Virtual Butler"
     debug: bool = False
 
+    # GitHub OAuth (self-modification feature)
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    github_callback_url: str = "http://localhost:3000/github/callback"
+    github_repo_owner: str = ""  # e.g. "raphyduck"
+    github_repo_name: str = "virtual_butler"
+
+    # Self-modification: path to the repository root accessible by the backend process
+    repo_root: str = "/repo"
+
 
 settings = Settings()

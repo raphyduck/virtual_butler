@@ -1,0 +1,215 @@
+"""AI-driven code modifier: turns a natural-language instruction into file changes.
+
+Flow
+----
+1. ``plan()``      — reads project files, asks the AI to produce a JSON change-set
+2. ``apply()``     — writes the generated files to disk
+3. ``git_commit()``— stages everything and commits
+4. ``git_push_github()`` (repo mode) — pushes to GitHub with token auth
+5. ``restart_local()``   (local mode) — triggers uvicorn --reload via sentinel touch,
+                                        then SIGTERM after 3 s as a fallback
+"""
+
+import json
+import os
+import signal
+import subprocess
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
+
+from app.config import settings
+from app.providers.base import ChatMessage
+from app.providers.factory import get_provider
+
+# ── Data model ────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class FileChange:
+    path: str
+    action: Literal["create", "modify", "delete"]
+    content: str | None = None  # None for "delete"
+
+
+@dataclass
+class ModificationPlan:
+    changes: list[FileChange]
+    commit_message: str
+
+
+# ── System prompt ─────────────────────────────────────────────────────────────
+
+_PLAN_SYSTEM = """\
+You are a senior software engineer working on the Virtual Butler project.
+Your task is to generate precise, minimal code changes based on a user instruction.
+
+CRITICAL: respond with ONLY valid JSON — no markdown fences, no prose — matching:
+{
+  "changes": [
+    {
+      "path": "relative/path/from/repo/root",
+      "action": "create" | "modify" | "delete",
+      "content": "<complete file content as a string, or null for delete>"
+    }
+  ],
+  "commit_message": "<conventional-commits style message>"
+}
+
+Rules:
+- Include COMPLETE file contents for create/modify (not diffs or patches)
+- Paths are relative to the repository root
+- Changes must be minimal and focused on the instruction
+- Do NOT touch files unrelated to the instruction
+"""
+
+# ── Modifier ──────────────────────────────────────────────────────────────────
+
+# Character budget for the context fed to the AI (≈ 20k tokens @ 4 chars/token)
+_CONTEXT_BUDGET = 80_000
+
+
+class CodeModifier:
+    def __init__(self, repo_root: str | None = None) -> None:
+        self.repo_root = Path(repo_root or settings.repo_root).resolve()
+
+    # ── Context ───────────────────────────────────────────────────────────────
+
+    def _file_tree(self) -> str:
+        result = subprocess.run(
+            ["git", "ls-files"],
+            cwd=self.repo_root,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout if result.returncode == 0 else ""
+
+    def _build_context(self) -> str:
+        tree = self._file_tree()
+        parts: list[str] = [f"## Repository file tree\n```\n{tree}```"]
+        used = len(parts[0])
+
+        def _add(path: Path) -> None:
+            nonlocal used
+            if not path.exists():
+                return
+            try:
+                text = path.read_text(encoding="utf-8")
+            except Exception:
+                return
+            rel = path.relative_to(self.repo_root)
+            snippet = f"\n\n## {rel}\n```\n{text}\n```"
+            if used + len(snippet) > _CONTEXT_BUDGET:
+                return
+            parts.append(snippet)
+            used += len(snippet)
+
+        # All Python source files in the backend app package
+        for py in sorted((self.repo_root / "backend" / "app").rglob("*.py")):
+            _add(py)
+
+        # Key configuration / frontend files
+        for extra in [
+            self.repo_root / "backend" / "pyproject.toml",
+            self.repo_root / "frontend" / "package.json",
+            self.repo_root / "frontend" / "src" / "lib" / "api.ts",
+        ]:
+            _add(extra)
+
+        return "".join(parts)
+
+    # ── Planning ──────────────────────────────────────────────────────────────
+
+    async def plan(
+        self,
+        instruction: str,
+        provider: str = "anthropic",
+        model: str = "claude-sonnet-4-6",
+        provider_config_json: str | None = None,
+    ) -> ModificationPlan:
+        context = self._build_context()
+        prompt = f"{context}\n\n## Instruction\n{instruction}\n\nGenerate the code changes as JSON."
+
+        provider_obj = get_provider(provider, model, provider_config_json)
+        raw = await provider_obj.complete(
+            [ChatMessage(role="user", content=prompt)],
+            system_prompt=_PLAN_SYSTEM,
+        )
+
+        # Strip potential markdown fences that some models add despite instructions
+        text = raw.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:])
+            if "```" in text:
+                text = text[: text.rfind("```")]
+        text = text.strip()
+
+        data = json.loads(text)
+        return ModificationPlan(
+            changes=[FileChange(path=c["path"], action=c["action"], content=c.get("content")) for c in data["changes"]],
+            commit_message=data["commit_message"],
+        )
+
+    # ── Application ───────────────────────────────────────────────────────────
+
+    def apply(self, plan: ModificationPlan) -> None:
+        """Write all file changes in the plan to disk."""
+        for change in plan.changes:
+            target = self.repo_root / change.path
+            if change.action == "delete":
+                target.unlink(missing_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(change.content or "", encoding="utf-8")
+
+    # ── Git ───────────────────────────────────────────────────────────────────
+
+    def git_commit(self, message: str, author_email: str = "butler@virtual-butler.local") -> str:
+        """Stage all changes, commit, and return the new HEAD SHA."""
+        subprocess.run(["git", "config", "user.email", author_email], cwd=self.repo_root, check=True)
+        subprocess.run(["git", "config", "user.name", "Virtual Butler"], cwd=self.repo_root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=self.repo_root, check=True)
+        subprocess.run(["git", "commit", "-m", message], cwd=self.repo_root, check=True)
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=self.repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+
+    def git_push_github(self, token: str, owner: str, repo: str, branch: str = "main") -> None:
+        """Push HEAD to GitHub using token auth (credentials never stored in history)."""
+        remote_url = f"https://{token}@github.com/{owner}/{repo}.git"
+        subprocess.run(
+            ["git", "push", remote_url, f"HEAD:{branch}"],
+            cwd=self.repo_root,
+            check=True,
+            capture_output=True,  # suppress token from console output
+        )
+
+    # ── Restart ───────────────────────────────────────────────────────────────
+
+    def restart_local(self) -> None:
+        """Trigger uvicorn --reload by touching a sentinel file, then SIGTERM after 3 s.
+
+        In development (docker-compose.override.yml), uvicorn runs with --reload and
+        will pick up the touch immediately.  In production the SIGTERM causes Docker
+        (restart: unless-stopped) to restart the container with the new code.
+        """
+        sentinel = self.repo_root / "backend" / "app" / "__init__.py"
+        try:
+            sentinel.touch()
+        except OSError:
+            pass
+
+        def _deferred_kill() -> None:
+            import time
+
+            time.sleep(3)
+            os.kill(os.getpid(), signal.SIGTERM)
+
+        threading.Thread(target=_deferred_kill, daemon=True).start()

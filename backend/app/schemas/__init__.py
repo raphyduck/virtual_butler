@@ -13,6 +13,15 @@ from app.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
+from app.schemas.self_modify import (
+    FileChangeOut,
+    GithubAuthorizeResponse,
+    GithubExchangeRequest,
+    GithubStatusResponse,
+    JobStatusResponse,
+    ModifyRequest,
+    PlanOut,
+)
 
 __all__ = [
     "RegisterRequest",
@@ -26,4 +35,11 @@ __all__ = [
     "SessionResponse",
     "MessageResponse",
     "DeliverableResponse",
+    "ModifyRequest",
+    "JobStatusResponse",
+    "PlanOut",
+    "FileChangeOut",
+    "GithubAuthorizeResponse",
+    "GithubExchangeRequest",
+    "GithubStatusResponse",
 ]

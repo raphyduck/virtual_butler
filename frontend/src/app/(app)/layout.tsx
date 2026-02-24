@@ -8,6 +8,7 @@ import clsx from 'clsx';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard' },
+  { href: '/settings', label: 'Settings' },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

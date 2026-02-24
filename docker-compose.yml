@@ -32,10 +32,16 @@ services:
       target: production
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://butler:${POSTGRES_PASSWORD:-butler_secret}@db:5432/virtual_butler
-      REDIS_URL:    redis://redis:6379
-      SECRET_KEY:   ${SECRET_KEY:-change_me_in_production}
-      DEBUG:        "false"
+      DATABASE_URL:          postgresql+asyncpg://butler:${POSTGRES_PASSWORD:-butler_secret}@db:5432/virtual_butler
+      REDIS_URL:             redis://redis:6379
+      SECRET_KEY:            ${SECRET_KEY:-change_me_in_production}
+      DEBUG:                 "false"
+      GITHUB_CLIENT_ID:      ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET:  ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_CALLBACK_URL:   ${GITHUB_CALLBACK_URL:-http://localhost:3000/github/callback}
+      GITHUB_REPO_OWNER:     ${GITHUB_REPO_OWNER:-}
+      GITHUB_REPO_NAME:      ${GITHUB_REPO_NAME:-virtual_butler}
+      REPO_ROOT:             /repo
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:

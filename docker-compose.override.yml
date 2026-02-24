@@ -16,10 +16,13 @@ services:
       target: dev
     environment:
       DEBUG: "true"
+      REPO_ROOT: /repo
     volumes:
       - ./backend:/app
       # Keep the venv from the image; don't override with host files
       - /app/.venv
+      # Mount the full repo root so the self-modification engine can read and write all project files
+      - .:/repo
     command: >
       uvicorn app.main:app
       --host 0.0.0.0
