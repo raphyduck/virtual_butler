@@ -12,7 +12,8 @@ class AbilityCreate(BaseModel):
     system_prompt: str | None = None
     deliverable_type: str
     target_type: str
-    target_config: str | None = None  # JSON string
+    target_config: str | None = None      # JSON string
+    provider_config: str | None = None    # JSON: {"api_key": "...", "base_url": "..."}
 
 
 class AbilityUpdate(BaseModel):
@@ -24,6 +25,7 @@ class AbilityUpdate(BaseModel):
     deliverable_type: str | None = None
     target_type: str | None = None
     target_config: str | None = None
+    provider_config: str | None = None
 
 
 class AbilityResponse(BaseModel):
@@ -37,6 +39,7 @@ class AbilityResponse(BaseModel):
     deliverable_type: str
     target_type: str
     target_config: str | None
+    provider_config: str | None
     created_at: datetime
     updated_at: datetime
 

@@ -18,6 +18,12 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     "python-multipart>=0.0.9",
     "httpx>=0.27.0",
+    # AI providers
+    "anthropic>=0.28.0",
+    "openai>=1.35.0",
+    "google-generativeai>=0.7.0",
+    # email validation (used by pydantic EmailStr)
+    "email-validator>=2.1.0",
 ]
 
 [project.optional-dependencies]
