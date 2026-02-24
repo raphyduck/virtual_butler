@@ -25,8 +25,9 @@ class Ability(Base):
 
     # Output configuration
     deliverable_type: Mapped[str] = mapped_column(String(50), nullable=False)  # code | website | video | document | ...
-    target_type: Mapped[str] = mapped_column(String(50), nullable=False)       # github | s3 | youtube | ftp | local | ...
-    target_config: Mapped[str | None] = mapped_column(Text, nullable=True)     # JSON stored as text
+    target_type: Mapped[str] = mapped_column(String(50), nullable=False)  # github | s3 | youtube | ftp | local | ...
+    target_config: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON stored as text
+    provider_config: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: api_key, base_url, etc.
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

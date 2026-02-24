@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import api_router
+from app.api.ws import router as ws_router
 from app.config import settings
 
 app = FastAPI(
@@ -20,6 +21,7 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+app.include_router(ws_router)  # WebSocket: /ws/session/{session_id}
 
 
 @app.get("/health")

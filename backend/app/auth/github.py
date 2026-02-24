@@ -1,0 +1,72 @@
+"""GitHub OAuth helpers for the self-modification feature."""
+
+from urllib.parse import urlencode
+
+import httpx
+
+from app.config import settings
+
+GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
+GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_API_URL = "https://api.github.com"
+
+
+def get_oauth_url(state: str) -> str:
+    """Build the GitHub OAuth authorization URL."""
+    params = {
+        "client_id": settings.github_client_id,
+        "redirect_uri": settings.github_callback_url,
+        "scope": "repo",
+        "state": state,
+    }
+    return f"{GITHUB_AUTHORIZE_URL}?{urlencode(params)}"
+
+
+async def exchange_code_for_token(code: str) -> str:
+    """Exchange a GitHub OAuth code for an access token."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            GITHUB_TOKEN_URL,
+            json={
+                "client_id": settings.github_client_id,
+                "client_secret": settings.github_client_secret,
+                "code": code,
+            },
+            headers={"Accept": "application/json"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if "access_token" not in data:
+            raise ValueError(f"GitHub OAuth error: {data.get('error_description', str(data))}")
+        return str(data["access_token"])
+
+
+async def get_github_user(token: str) -> dict:
+    """Return the authenticated GitHub user's profile."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{GITHUB_API_URL}/user",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return dict(resp.json())
+
+
+async def check_repo_ownership(token: str, owner: str, repo: str) -> bool:
+    """Return True if the token's GitHub user is the owner of `owner/repo`."""
+    try:
+        user = await get_github_user(token)
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{GITHUB_API_URL}/repos/{owner}/{repo}",
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return False
+            repo_data = resp.json()
+            return bool(repo_data["owner"]["login"] == user["login"])
+    except Exception:
+        return False

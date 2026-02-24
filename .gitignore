@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 venv/
 .env
+!.env.example
 *.egg-info/
 dist/
 build/
@@ -16,6 +17,7 @@ build/
 node_modules/
 .next/
 out/
+*.tsbuildinfo
 .env.local
 .env.*.local
 npm-debug.log*

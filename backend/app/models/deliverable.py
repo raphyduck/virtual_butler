@@ -16,8 +16,8 @@ class Deliverable(Base):
         UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, unique=True
     )
     deliverable_type: Mapped[str] = mapped_column(String(50), nullable=False)  # mirrors Ability.deliverable_type
-    url: Mapped[str | None] = mapped_column(Text, nullable=True)               # where it was published
-    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)     # JSON: extra info (commit sha, etc.)
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)  # where it was published
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: extra info (commit sha, etc.)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     session: Mapped["Session"] = relationship("Session", back_populates="deliverable")  # noqa: F821
