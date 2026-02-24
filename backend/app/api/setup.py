@@ -14,7 +14,7 @@ from app.database import get_db
 from app.models.app_setting import CONFIGURABLE_KEYS, AppSetting
 from app.models.user import User
 from app.schemas.auth import TokenResponse
-from app.schemas.settings import SetupRequest, SetupStatus, SettingsUpdate
+from app.schemas.settings import SettingsUpdate, SetupRequest, SetupStatus
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 
