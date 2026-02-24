@@ -5,11 +5,11 @@ services:
 
   db:
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
 
   redis:
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
 
   backend:
     build:
