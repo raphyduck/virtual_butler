@@ -1,0 +1,38 @@
+# Development overrides — applied automatically when you run `docker compose up`
+# Enables hot-reload for backend and frontend, and exposes DB/Redis ports.
+
+services:
+
+  db:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      target: dev
+    environment:
+      DEBUG: "true"
+    volumes:
+      - ./backend:/app
+      # Keep the venv from the image; don't override with host files
+      - /app/.venv
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+
+  frontend:
+    build:
+      target: dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_WS_URL:  ws://localhost:8000
