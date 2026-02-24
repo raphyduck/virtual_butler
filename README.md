@@ -54,15 +54,80 @@ virtual_butler/
 
 ## Getting Started
 
-> Full setup instructions coming soon.
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) >= 24
+- [Docker Compose](https://docs.docker.com/compose/install/) >= 2.20 (bundled with Docker Desktop)
+- Git
+
+### 1. Clone the repository
 
 ```bash
-# Clone the repo
 git clone https://github.com/raphyduck/virtual_butler.git
 cd virtual_butler
+```
 
-# Start all services
+### 2. Configure environment variables
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and fill in the required values:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `POSTGRES_PASSWORD` | Yes | Password for the PostgreSQL `butler` user |
+| `SECRET_KEY` | Yes | Long random string for JWT signing — generate with `openssl rand -hex 32` |
+| `ANTHROPIC_API_KEY` | Optional | Anthropic API key (can also be set per-ability) |
+| `OPENAI_API_KEY` | Optional | OpenAI API key |
+| `GOOGLE_API_KEY` | Optional | Google Gemini API key |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | Optional | GitHub OAuth app credentials (self-modification feature) |
+
+### 3. Start the application
+
+**Development** (hot-reload enabled for backend and frontend):
+
+```bash
 docker compose up
+```
+
+The `docker-compose.override.yml` file is applied automatically and enables live-reload, exposes the database on port `5432`, and Redis on port `6379`.
+
+**Production** (optimised builds, no volume mounts):
+
+```bash
+docker compose -f docker-compose.yml up -d
+```
+
+### 4. Access the application
+
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:3000 |
+| Backend API | http://localhost:8000 |
+| API docs (Swagger) | http://localhost:8000/docs |
+
+> Default ports can be overridden via `FRONTEND_PORT` and `BACKEND_PORT` in `.env`.
+
+### Useful commands
+
+```bash
+# View logs for a specific service
+docker compose logs -f backend
+docker compose logs -f frontend
+
+# Stop all services
+docker compose down
+
+# Rebuild images after dependency changes
+docker compose build
+
+# Run database migrations manually
+docker compose exec backend alembic upgrade head
+
+# Run backend tests
+docker compose exec backend pytest
 ```
 
 ## License
