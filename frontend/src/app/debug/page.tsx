@@ -17,17 +17,18 @@ async function checkBackend(url: string): Promise<{ ok: boolean; status?: number
 export const dynamic = 'force-dynamic';
 
 export default async function DebugPage() {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '(not set — defaulting to http://localhost:8000)';
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '(not set)';
+  const backendInternalUrl = process.env.BACKEND_INTERNAL_URL ?? '(not set — rewrite fell back to NEXT_PUBLIC_API_URL or http://localhost:8000)';
   const nodeEnv = process.env.NODE_ENV ?? '(not set)';
   const port = process.env.PORT ?? '(not set)';
   const hostname = process.env.HOSTNAME ?? '(not set)';
 
-  // Try reaching the backend from the Next.js server (internal Docker network).
-  // The rewrite in next.config.js uses NEXT_PUBLIC_API_URL, so we test the same URL here.
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
-  const backendCheck = await checkBackend(backendUrl);
+  // Test the URL the Next.js rewrite proxy actually uses: BACKEND_INTERNAL_URL.
+  // This is baked into routes-manifest.json at build time via next.config.mjs.
+  const rewriteTarget = process.env.BACKEND_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+  const rewriteCheck = await checkBackend(rewriteTarget);
 
-  // Also try the Docker-internal service name as a secondary check.
+  // Also try the Docker-internal service name as a sanity check.
   const internalCheck = await checkBackend('http://backend:8000');
 
   return (
@@ -45,6 +46,7 @@ export default async function DebugPage() {
               ['PORT', port],
               ['HOSTNAME', hostname],
               ['NEXT_PUBLIC_API_URL', apiUrl],
+              ['BACKEND_INTERNAL_URL', backendInternalUrl],
             ].map(([k, v]) => (
               <tr key={k} style={{ borderBottom: '1px solid #ddd' }}>
                 <td style={{ padding: '0.4rem 1rem 0.4rem 0', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{k}</td>
@@ -59,14 +61,14 @@ export default async function DebugPage() {
         <h2>Backend connectivity (from Next.js server process)</h2>
 
         <h3>
-          Via NEXT_PUBLIC_API_URL ({backendUrl})
+          Via rewrite target — BACKEND_INTERNAL_URL ({rewriteTarget})
           {' '}
-          {backendCheck.ok ? '✅' : '❌'}
+          {rewriteCheck.ok ? '✅' : '❌'}
         </h3>
         <pre style={{ background: '#f4f4f4', padding: '1rem', overflowX: 'auto' }}>
-          {backendCheck.ok
-            ? `HTTP ${backendCheck.status}\n${backendCheck.body}`
-            : `Error: ${backendCheck.error ?? `HTTP ${backendCheck.status} — ${backendCheck.body}`}`}
+          {rewriteCheck.ok
+            ? `HTTP ${rewriteCheck.status}\n${rewriteCheck.body}`
+            : `Error: ${rewriteCheck.error ?? `HTTP ${rewriteCheck.status} — ${rewriteCheck.body}`}`}
         </pre>
 
         <h3>
@@ -81,13 +83,13 @@ export default async function DebugPage() {
         </pre>
 
         <p style={{ marginTop: '1rem', color: '#666', fontSize: '0.9rem' }}>
-          <strong>What this means:</strong> The Next.js dev server proxies all{' '}
-          <code>/api/*</code> requests (client-side fetches) to{' '}
-          <code>NEXT_PUBLIC_API_URL</code>. If that URL is{' '}
-          <code>http://localhost:8000</code> inside Docker, the proxy will fail
-          because port 8000 belongs to the <em>backend</em> container, not the
-          frontend container. The Docker-internal URL{' '}
-          <code>http://backend:8000</code> should succeed.
+          <strong>What this means:</strong> All <code>/api/*</code> requests from
+          the browser hit the Next.js server, which rewrites them to{' '}
+          <code>BACKEND_INTERNAL_URL</code> (set at image build time via a Dockerfile{' '}
+          <code>ARG</code>). In Docker this is <code>http://backend:8000</code>.{' '}
+          <code>NEXT_PUBLIC_API_URL</code> is only used by the browser for WebSocket
+          connections and direct links — it is <em>not</em> the rewrite target.
+          Both checks above should show ✅ for the app to function correctly.
         </p>
       </section>
 
