@@ -112,7 +112,7 @@ function JobCard({ job, onUpdate }: { job: ButlerJob; onUpdate: (j: ButlerJob) =
         <span className="text-gray-500">{job.mode} mode</span>
       </div>
 
-      <p className="mb-1 italic text-gray-600 line-clamp-2">"{job.instruction}"</p>
+      <p className="mb-1 italic text-gray-600 line-clamp-2">&quot;{job.instruction}&quot;</p>
 
       <p className="text-gray-500">{STATUS_LABELS[job.status] ?? job.status}</p>
 
@@ -388,10 +388,10 @@ export default function ButlerChat() {
             {messages.length === 0 && (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-gray-400 px-6">
                 <span className="text-3xl">🤵</span>
-                <p className="text-sm font-medium text-gray-600">Hello! I'm your Virtual Butler.</p>
+                <p className="text-sm font-medium text-gray-600">Hello! I&apos;m your Virtual Butler.</p>
                 <p className="text-xs">
                   Ask me about usage stats, abilities, settings — or ask me to change something
-                  about the platform and I'll implement it for you.
+                  about the platform and I&apos;ll implement it for you.
                 </p>
               </div>
             )}
