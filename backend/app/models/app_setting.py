@@ -17,6 +17,8 @@ CONFIGURABLE_KEYS = frozenset(
         "github_callback_url",
         "github_repo_owner",
         "github_repo_name",
+        "butler_provider",
+        "butler_model",
     }
 )
 

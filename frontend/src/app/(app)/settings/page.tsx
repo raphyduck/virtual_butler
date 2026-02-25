@@ -1,19 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AppSettings,
-  cancelModifyJob,
-  confirmModifyJob,
   disconnectGithub,
-  FileChangeOut,
   getAppSettings,
   getGithubAuthorizeUrl,
   getGithubStatus,
-  getModifyJob,
   GithubStatus,
-  ModifyJob,
-  startModifyJob,
   updateAppSettings,
 } from '@/lib/api';
 
@@ -106,6 +100,32 @@ function AppConfigSection() {
             {field('anthropic_api_key', 'Anthropic API key', 'sk-ant-…', true)}
             {field('openai_api_key', 'OpenAI API key', 'sk-…', true)}
             {field('google_api_key', 'Google Gemini API key', '', true)}
+          </div>
+        </div>
+
+        {/* Butler Assistant */}
+        <div>
+          <h3 className="mb-1 text-sm font-semibold text-gray-700">Butler Assistant</h3>
+          <p className="mb-3 text-xs text-gray-500">
+            AI provider and model used by the floating butler chat widget.
+            Defaults to Anthropic / claude-sonnet-4-6 if not set.
+          </p>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Provider</label>
+              <select
+                value={form['butler_provider'] ?? ''}
+                onChange={(e) => { set('butler_provider', e.target.value); }}
+                className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">— use default (anthropic) —</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+                <option value="google">Google</option>
+                <option value="ollama">Ollama</option>
+              </select>
+            </div>
+            {field('butler_model', 'Model', 'claude-sonnet-4-6')}
           </div>
         </div>
 
@@ -221,280 +241,6 @@ function GithubSection() {
   );
 }
 
-// ── Self-modification section ─────────────────────────────────────────────────
-
-const TERMINAL_STATUSES = new Set(['done', 'failed', 'cancelled']);
-
-function PlanPreview({ changes }: { changes: FileChangeOut[] }) {
-  const actionColor = (a: string) =>
-    a === 'create' ? 'text-green-700' : a === 'delete' ? 'text-red-600' : 'text-yellow-700';
-  const actionLabel = (a: string) =>
-    a === 'create' ? '+ create' : a === 'delete' ? '− delete' : '~ modify';
-
-  return (
-    <ul className="mt-2 space-y-1 rounded border border-gray-200 bg-gray-50 p-3 font-mono text-xs">
-      {changes.map((c, i) => (
-        <li key={i} className="flex items-center gap-2">
-          <span className={`w-14 shrink-0 font-semibold ${actionColor(c.action)}`}>
-            {actionLabel(c.action)}
-          </span>
-          <span className="truncate text-gray-700">{c.path}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function SelfModifySection() {
-  const [instruction, setInstruction] = useState('');
-  const [mode, setMode] = useState<'local' | 'repo'>('local');
-  const [provider, setProvider] = useState('anthropic');
-  const [model, setModel] = useState('claude-sonnet-4-6');
-  const [job, setJob] = useState<ModifyJob | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Poll job status until terminal
-  useEffect(() => {
-    if (!job || TERMINAL_STATUSES.has(job.status)) {
-      if (pollRef.current) clearInterval(pollRef.current);
-      return;
-    }
-    pollRef.current = setInterval(async () => {
-      try {
-        const updated = await getModifyJob(job.id);
-        setJob(updated);
-      } catch {
-        /* ignore transient errors */
-      }
-    }, 1500);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [job?.id, job?.status]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function submit() {
-    if (!instruction.trim()) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const j = await startModifyJob(instruction, mode, provider, model);
-      setJob(j);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to start job.');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function confirm() {
-    if (!job) return;
-    try {
-      const updated = await confirmModifyJob(job.id);
-      setJob(updated);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to confirm.');
-    }
-  }
-
-  async function cancel() {
-    if (!job) return;
-    try {
-      const updated = await cancelModifyJob(job.id);
-      setJob(updated);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to cancel.');
-    }
-  }
-
-  function reset() {
-    setJob(null);
-    setInstruction('');
-    setError(null);
-  }
-
-  const statusBadge = (s: string) => {
-    const map: Record<string, string> = {
-      pending: 'bg-gray-100 text-gray-700',
-      planning: 'bg-blue-100 text-blue-700',
-      planned: 'bg-yellow-100 text-yellow-800',
-      confirmed: 'bg-blue-100 text-blue-700',
-      applying: 'bg-blue-100 text-blue-700',
-      committing: 'bg-blue-100 text-blue-700',
-      pushing: 'bg-blue-100 text-blue-700',
-      restarting: 'bg-orange-100 text-orange-700',
-      done: 'bg-green-100 text-green-800',
-      failed: 'bg-red-100 text-red-700',
-      cancelled: 'bg-gray-100 text-gray-500',
-    };
-    return map[s] ?? 'bg-gray-100 text-gray-700';
-  };
-
-  return (
-    <section className="rounded-lg border border-gray-200 p-6">
-      <h2 className="mb-1 text-base font-semibold">Self-Modification</h2>
-      <p className="mb-4 text-sm text-gray-500">
-        Describe a change and Virtual Butler will generate, preview, and optionally apply it to its
-        own codebase using AI.
-      </p>
-
-      {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
-
-      {/* ── Input form (shown when no active job) ── */}
-      {!job && (
-        <div className="space-y-4">
-          <textarea
-            value={instruction}
-            onChange={(e) => setInstruction(e.target.value)}
-            rows={4}
-            placeholder="e.g. Add rate-limiting middleware to the FastAPI backend (10 req/min per user)"
-            className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-
-          <div className="flex flex-wrap items-end gap-4">
-            {/* Mode */}
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Mode</label>
-              <select
-                value={mode}
-                onChange={(e) => setMode(e.target.value as 'local' | 'repo')}
-                className="rounded border border-gray-300 px-2 py-1.5 text-sm"
-              >
-                <option value="local">local — apply to this instance + restart</option>
-                <option value="repo">repo — push to GitHub (owner only)</option>
-              </select>
-            </div>
-
-            {/* Provider */}
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Provider</label>
-              <select
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
-                className="rounded border border-gray-300 px-2 py-1.5 text-sm"
-              >
-                <option value="anthropic">Anthropic</option>
-                <option value="openai">OpenAI</option>
-                <option value="google">Google</option>
-                <option value="ollama">Ollama</option>
-              </select>
-            </div>
-
-            {/* Model */}
-            <div className="flex-1">
-              <label className="mb-1 block text-xs font-medium text-gray-600">Model</label>
-              <input
-                type="text"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-              />
-            </div>
-
-            <button
-              onClick={submit}
-              disabled={submitting || !instruction.trim()}
-              className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {submitting ? 'Submitting…' : 'Generate plan'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Active job ── */}
-      {job && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <span
-              className={`rounded px-2 py-0.5 text-xs font-semibold ${statusBadge(job.status)}`}
-            >
-              {job.status}
-            </span>
-            <span className="text-xs text-gray-500">
-              {job.mode} mode · {job.provider} / {job.model}
-            </span>
-          </div>
-
-          <p className="rounded bg-gray-50 px-3 py-2 text-sm italic text-gray-700">
-            &ldquo;{job.instruction}&rdquo;
-          </p>
-
-          {/* Spinner for in-progress states */}
-          {!TERMINAL_STATUSES.has(job.status) && job.status !== 'planned' && (
-            <p className="text-sm text-gray-500">
-              {job.status === 'planning' && 'AI is generating the plan…'}
-              {job.status === 'confirmed' && 'Preparing to apply…'}
-              {job.status === 'applying' && 'Writing files to disk…'}
-              {job.status === 'committing' && 'Committing changes…'}
-              {job.status === 'pushing' && 'Pushing to GitHub…'}
-              {job.status === 'restarting' && 'Triggering application restart…'}
-            </p>
-          )}
-
-          {/* Plan preview + confirm / cancel */}
-          {job.status === 'planned' && job.plan && (
-            <div>
-              <p className="text-sm font-medium text-gray-700">
-                Proposed changes ({job.plan.changes.length} file
-                {job.plan.changes.length !== 1 ? 's' : ''}):
-              </p>
-              <PlanPreview changes={job.plan.changes} />
-              <p className="mt-2 text-xs text-gray-500">
-                Commit message: <em>{job.plan.commit_message}</em>
-              </p>
-              <div className="mt-3 flex gap-3">
-                <button
-                  onClick={confirm}
-                  className="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
-                >
-                  Apply changes
-                </button>
-                <button
-                  onClick={cancel}
-                  className="rounded border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Done */}
-          {job.status === 'done' && (
-            <div className="rounded bg-green-50 p-3 text-sm text-green-800">
-              Changes applied successfully.
-              {job.commit_sha && (
-                <span className="ml-2 font-mono text-xs text-green-700">
-                  sha: {job.commit_sha.slice(0, 7)}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Failed */}
-          {job.status === 'failed' && (
-            <div className="rounded bg-red-50 p-3 text-sm text-red-700">
-              <strong>Error:</strong> {job.error ?? 'Unknown error.'}
-            </div>
-          )}
-
-          {/* Start again */}
-          {TERMINAL_STATUSES.has(job.status) && (
-            <button
-              onClick={reset}
-              className="text-sm text-blue-600 underline hover:text-blue-800"
-            >
-              Start a new modification
-            </button>
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -503,7 +249,6 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-bold">Settings</h1>
       <AppConfigSection />
       <GithubSection />
-      <SelfModifySection />
     </div>
   );
 }
