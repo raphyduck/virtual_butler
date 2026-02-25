@@ -14,6 +14,8 @@ class SettingsUpdate(BaseModel):
     github_callback_url: str | None = None
     github_repo_owner: str | None = None
     github_repo_name: str | None = None
+    butler_provider: str | None = None
+    butler_model: str | None = None
 
 
 class SettingsResponse(BaseModel):
@@ -25,6 +27,8 @@ class SettingsResponse(BaseModel):
     github_callback_url: str | None = None
     github_repo_owner: str | None = None
     github_repo_name: str | None = None
+    butler_provider: str | None = None
+    butler_model: str | None = None
 
 
 class SetupRequest(BaseModel):

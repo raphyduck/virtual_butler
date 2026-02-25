@@ -39,6 +39,8 @@ export interface AppSettings {
   github_callback_url: string | null;
   github_repo_owner: string | null;
   github_repo_name: string | null;
+  butler_provider: string | null;
+  butler_model: string | null;
 }
 
 export const getSetupStatus = (): Promise<SetupStatus> => request('/setup/status');
@@ -198,3 +200,30 @@ export const confirmModifyJob = (jobId: string): Promise<ModifyJob> =>
 
 export const cancelModifyJob = (jobId: string): Promise<ModifyJob> =>
   request(`/self/modify/${jobId}/cancel`, { method: 'POST' });
+
+// ─── Butler chat ───────────────────────────────────────────────────────────────
+// The butler WebSocket streams these lightweight job snapshots (no file content).
+
+export interface ButlerJobPlanChange {
+  path: string;
+  action: 'create' | 'modify' | 'delete';
+}
+
+export interface ButlerJobPlan {
+  changes: ButlerJobPlanChange[];
+  commit_message: string;
+}
+
+export interface ButlerJob {
+  id: string;
+  status: string;
+  mode: string;
+  instruction: string;
+  provider: string;
+  model: string;
+  plan: ButlerJobPlan | null;
+  error: string | null;
+  commit_sha: string | null;
+  created_at: string;
+  completed_at: string | null;
+}

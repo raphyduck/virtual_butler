@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import ButlerChat from '@/components/ButlerChat';
 import { useAuthStore } from '@/store/auth';
 import clsx from 'clsx';
 
@@ -60,6 +61,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
         {children}
       </main>
+
+      {/* Butler floating chat — available across all authenticated pages */}
+      <ButlerChat />
     </div>
   );
 }

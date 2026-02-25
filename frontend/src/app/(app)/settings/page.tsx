@@ -109,6 +109,32 @@ function AppConfigSection() {
           </div>
         </div>
 
+        {/* Butler Assistant */}
+        <div>
+          <h3 className="mb-1 text-sm font-semibold text-gray-700">Butler Assistant</h3>
+          <p className="mb-3 text-xs text-gray-500">
+            AI provider and model used by the floating butler chat widget.
+            Defaults to Anthropic / claude-sonnet-4-6 if not set.
+          </p>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Provider</label>
+              <select
+                value={form['butler_provider'] ?? ''}
+                onChange={(e) => { set('butler_provider', e.target.value); }}
+                className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">— use default (anthropic) —</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+                <option value="google">Google</option>
+                <option value="ollama">Ollama</option>
+              </select>
+            </div>
+            {field('butler_model', 'Model', 'claude-sonnet-4-6')}
+          </div>
+        </div>
+
         {/* GitHub OAuth App */}
         <div>
           <h3 className="mb-3 text-sm font-semibold text-gray-700">GitHub OAuth App</h3>
