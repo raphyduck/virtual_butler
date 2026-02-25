@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { exchangeGithubCode } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
@@ -17,7 +17,7 @@ import { getToken } from '@/lib/auth';
  *  3. Calls the backend /self/github/exchange endpoint (requires JWT)
  *  4. Redirects to /settings on success
  */
-export default function GithubCallbackPage() {
+function GithubCallbackInner() {
   const router = useRouter();
   const params = useSearchParams();
   const [message, setMessage] = useState('Completing GitHub connection…');
@@ -72,5 +72,19 @@ export default function GithubCallbackPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function GithubCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-gray-50">
+          <p className="text-sm text-gray-600">Loading…</p>
+        </div>
+      }
+    >
+      <GithubCallbackInner />
+    </Suspense>
   );
 }
