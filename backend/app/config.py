@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     app_name: str = "Virtual Butler"
     debug: bool = False
 
+    # CORS — comma-separated list of allowed origins
+    cors_origins: str = "http://localhost:3000"
+
     # GitHub OAuth (self-modification feature)
     github_client_id: str = ""
     github_client_secret: str = ""

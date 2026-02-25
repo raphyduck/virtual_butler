@@ -1,5 +1,17 @@
 services:
 
+  # ─── Reverse proxy ──────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - backend
+
   # ─── Database ───────────────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine
@@ -42,6 +54,7 @@ services:
       GITHUB_REPO_OWNER:     ${GITHUB_REPO_OWNER:-}
       GITHUB_REPO_NAME:      ${GITHUB_REPO_NAME:-virtual_butler}
       REPO_ROOT:             /repo
+      CORS_ORIGINS:          ${CORS_ORIGINS:-http://localhost:3000}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -57,8 +70,8 @@ services:
       target: production
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-      NEXT_PUBLIC_WS_URL:  ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8000}
+      NEXT_PUBLIC_WS_URL:  ${NEXT_PUBLIC_WS_URL:-ws://backend:8000}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
