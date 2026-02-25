@@ -23,14 +23,17 @@ REST endpoints  POST /self/modify/{id}/confirm  |  /cancel .
 
 import asyncio
 import json
+import os
 import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import JWTError
 
 from app.abilities.butler_handler import ButlerHandler
+from app.api.self_modify import _bg_plan
 from app.auth.jwt import decode_token
 from app.database import AsyncSessionLocal
+from app.models.app_setting import get_effective_setting
 from app.models.self_modify_job import SelfModifyJob
 
 router = APIRouter()
@@ -111,8 +114,6 @@ async def _create_modify_job(
     provider: str,
     model: str,
 ) -> tuple[uuid.UUID, dict]:
-    from app.api.self_modify import _bg_plan
-
     async with AsyncSessionLocal() as db:
         job = SelfModifyJob(
             user_id=uuid.UUID(user_id),
@@ -166,16 +167,13 @@ async def websocket_butler(websocket: WebSocket) -> None:
                 continue
 
             # Stream the butler response and handle any modification action
-            import os as _os
-            from app.models.app_setting import get_effective_setting
-
             async with AsyncSessionLocal() as db:
                 # Resolve butler provider/model up-front (used for modify jobs)
                 butler_provider = await get_effective_setting(
-                    db, "butler_provider", _os.getenv("BUTLER_PROVIDER", "anthropic")
+                    db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic")
                 ) or "anthropic"
                 butler_model = await get_effective_setting(
-                    db, "butler_model", _os.getenv("BUTLER_MODEL", "claude-sonnet-4-6")
+                    db, "butler_model", os.getenv("BUTLER_MODEL", "claude-sonnet-4-6")
                 ) or "claude-sonnet-4-6"
 
                 try:
