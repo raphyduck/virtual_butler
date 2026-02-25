@@ -36,6 +36,12 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
+      # NEXT_PUBLIC_API_URL is embedded in the browser bundle — keep it as the
+      # host-accessible URL so client-side direct fetches (if any) still work.
       NEXT_PUBLIC_API_URL: http://localhost:8000
       NEXT_PUBLIC_WS_URL:  ws://localhost:8000
+      # BACKEND_INTERNAL_URL is server-only (Next.js process inside Docker).
+      # The next.config.js rewrite uses this so server-side proxying reaches the
+      # backend container, not localhost (which is the frontend container itself).
+      BACKEND_INTERNAL_URL: http://backend:8000
     command: npm run dev
