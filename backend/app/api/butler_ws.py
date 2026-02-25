@@ -62,10 +62,7 @@ def _job_dict(job: SelfModifyJob) -> dict:
         raw = json.loads(job.plan_json)
         plan = {
             "commit_message": raw.get("commit_message", ""),
-            "changes": [
-                {"path": c["path"], "action": c["action"]}
-                for c in raw.get("changes", [])
-            ],
+            "changes": [{"path": c["path"], "action": c["action"]} for c in raw.get("changes", [])],
         }
     return {
         "id": str(job.id),
@@ -95,9 +92,7 @@ async def _poll_job_updates(websocket: WebSocket, job_id: uuid.UUID) -> None:
                 if job is None:
                     break
                 event_type = "modify_done" if job.status in _TERMINAL else "modify_update"
-                await websocket.send_text(
-                    json.dumps({"type": event_type, "job": _job_dict(job)})
-                )
+                await websocket.send_text(json.dumps({"type": event_type, "job": _job_dict(job)}))
                 if job.status in _TERMINAL:
                     break
         except Exception:
@@ -161,20 +156,20 @@ async def websocket_butler(websocket: WebSocket) -> None:
                 payload = json.loads(raw)
                 user_message: str = payload["content"]
             except (json.JSONDecodeError, KeyError):
-                await send(
-                    {"type": "error", "detail": 'Invalid payload — expected {"content": "..."}'}
-                )
+                await send({"type": "error", "detail": 'Invalid payload — expected {"content": "..."}'})
                 continue
 
             # Stream the butler response and handle any modification action
             async with AsyncSessionLocal() as db:
                 # Resolve butler provider/model up-front (used for modify jobs)
-                butler_provider = await get_effective_setting(
-                    db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic")
-                ) or "anthropic"
-                butler_model = await get_effective_setting(
-                    db, "butler_model", os.getenv("BUTLER_MODEL", "claude-sonnet-4-6")
-                ) or "claude-sonnet-4-6"
+                butler_provider = (
+                    await get_effective_setting(db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic"))
+                    or "anthropic"
+                )
+                butler_model = (
+                    await get_effective_setting(db, "butler_model", os.getenv("BUTLER_MODEL", "claude-sonnet-4-6"))
+                    or "claude-sonnet-4-6"
+                )
 
                 try:
                     async for chunk in handler.run(db, user_id, user_message):

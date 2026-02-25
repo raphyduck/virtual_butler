@@ -22,7 +22,7 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
-app.include_router(ws_router)        # WebSocket: /ws/session/{session_id}
+app.include_router(ws_router)  # WebSocket: /ws/session/{session_id}
 app.include_router(butler_ws_router)  # WebSocket: /ws/butler
 
 

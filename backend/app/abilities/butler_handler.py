@@ -73,30 +73,20 @@ class ButlerHandler:
 
     async def _build_context(self, db: AsyncSession, user_id: str) -> str:
         ability_count: int = (
-            await db.execute(
-                select(func.count()).select_from(Ability).where(Ability.user_id == user_id)
-            )
+            await db.execute(select(func.count()).select_from(Ability).where(Ability.user_id == user_id))
         ).scalar() or 0
 
         ability_names = list(
-            (
-                await db.execute(
-                    select(Ability.name).where(Ability.user_id == user_id).limit(20)
-                )
-            ).scalars()
+            (await db.execute(select(Ability.name).where(Ability.user_id == user_id).limit(20))).scalars()
         )
 
         session_count: int = (
-            await db.execute(
-                select(func.count()).select_from(Session).where(Session.user_id == user_id)
-            )
+            await db.execute(select(func.count()).select_from(Session).where(Session.user_id == user_id))
         ).scalar() or 0
 
         active_count: int = (
             await db.execute(
-                select(func.count())
-                .select_from(Session)
-                .where(Session.user_id == user_id, Session.status == "running")
+                select(func.count()).select_from(Session).where(Session.user_id == user_id, Session.status == "running")
             )
         ).scalar() or 0
 
@@ -119,12 +109,8 @@ class ButlerHandler:
         return "\n".join(lines)
 
     async def _resolve_provider(self, db: AsyncSession):
-        provider_name = await get_effective_setting(
-            db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic")
-        )
-        model = await get_effective_setting(
-            db, "butler_model", os.getenv("BUTLER_MODEL", "claude-sonnet-4-6")
-        )
+        provider_name = await get_effective_setting(db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic"))
+        model = await get_effective_setting(db, "butler_model", os.getenv("BUTLER_MODEL", "claude-sonnet-4-6"))
 
         # Resolve API key from DB, falling back to env
         key_map = {
