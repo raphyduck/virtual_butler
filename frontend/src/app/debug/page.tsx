@@ -34,7 +34,7 @@ export default async function DebugPage() {
   return (
     <main style={{ fontFamily: 'monospace', padding: '2rem', maxWidth: '900px' }}>
       <h1 style={{ borderBottom: '2px solid #333', paddingBottom: '0.5rem' }}>
-        Virtual Butler — Debug Page
+        Personal Assistant — Debug Page
       </h1>
 
       <section>

@@ -36,7 +36,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
           <div className="flex items-center gap-6">
             <Link href="/dashboard" className="text-sm font-bold tracking-tight text-brand-600">
-              Virtual Butler
+              Personal Assistant
             </Link>
             {navItems.map(({ href, label }) => (
               <Link

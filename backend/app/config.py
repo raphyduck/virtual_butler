@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
 
     # App
-    app_name: str = "Virtual Butler"
+    app_name: str = "Personal Assistant"
     debug: bool = False
 
     # CORS — comma-separated list of allowed origins

@@ -445,7 +445,7 @@ export default function ButlerChat() {
             <div className="flex items-center gap-2">
               <span className="text-base">🤵</span>
               <div>
-                <p className="text-sm font-semibold text-white">Virtual Butler</p>
+                <p className="text-sm font-semibold text-white">Personal Assistant</p>
                 <p className="text-[10px] text-green-200">
                   {connected ? 'Connected' : 'Connecting…'}
                 </p>
@@ -465,7 +465,7 @@ export default function ButlerChat() {
             {messages.length === 0 && (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-gray-400 px-6">
                 <span className="text-3xl">🤵</span>
-                <p className="text-sm font-medium text-gray-600">Hello! I&apos;m your Virtual Butler.</p>
+                <p className="text-sm font-medium text-gray-600">Hello! I&apos;m your Personal Assistant.</p>
                 <p className="text-xs">
                   Ask me about usage stats, abilities, settings — or ask me to change something
                   about the platform and I&apos;ll implement it for you.

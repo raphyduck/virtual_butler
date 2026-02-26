@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Virtual Butler',
+  title: 'Personal Assistant',
   description: 'Your AI-powered task orchestrator',
 };
 
