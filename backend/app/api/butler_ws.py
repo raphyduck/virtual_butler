@@ -12,13 +12,14 @@ Server → Client:
     {"type": "done"}
     {"type": "error",          "detail": "<error message>"}
     {"type": "modify_started", "job": {...}}
+    {"type": "modify_step",    "job_id": "<uuid>", "step": {"tool": "...", "label": "...", "status": "ok"}}
     {"type": "modify_update",  "job": {...}}
     {"type": "modify_done",    "job": {...}}
 
 The butler AI may embed an ```action``` block in its response.  When detected the
-server automatically creates a SelfModifyJob (planning phase) and streams status
-updates back to the client.  The client confirms or cancels via the existing
-REST endpoints  POST /self/modify/{id}/confirm  |  /cancel .
+server automatically creates a SelfModifyJob (planning phase) and streams agent
+step events + status updates back to the client.  The client confirms or cancels
+via the REST endpoints  POST /self/modify/{id}/confirm  |  /cancel .
 """
 
 import asyncio
@@ -30,7 +31,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import JWTError
 
 from app.abilities.butler_handler import ButlerHandler
-from app.api.self_modify import _bg_plan
+from app.api.self_modify import _bg_plan, job_step_queues
 from app.auth.jwt import decode_token
 from app.database import AsyncSessionLocal
 from app.models.app_setting import get_effective_setting
@@ -39,6 +40,9 @@ from app.models.self_modify_job import SelfModifyJob
 router = APIRouter()
 
 _TERMINAL = frozenset({"done", "failed", "cancelled"})
+
+# Maximum seconds to wait for the next agent step before falling back to DB poll
+_STEP_TIMEOUT = 120.0
 
 
 # ── Auth helper ───────────────────────────────────────────────────────────────
@@ -79,14 +83,51 @@ def _job_dict(job: SelfModifyJob) -> dict:
     }
 
 
-# ── Polling helper ────────────────────────────────────────────────────────────
+# ── Job watcher ───────────────────────────────────────────────────────────────
 
 
-async def _poll_job_updates(websocket: WebSocket, job_id: uuid.UUID) -> None:
-    """Stream modify job status updates until the job reaches a terminal state."""
-    while True:
-        await asyncio.sleep(1.5)
-        try:
+async def _watch_job(websocket: WebSocket, job_id: uuid.UUID) -> None:
+    """Stream agent steps and job status updates until the job reaches a terminal state.
+
+    Phase 1 — drains the per-job asyncio.Queue of AgentStep objects (real-time
+    streaming of the agent's tool calls).  A None sentinel from _bg_plan signals
+    that planning is complete.
+
+    Phase 2 — polls the DB every 1.5 s and sends modify_update / modify_done
+    events until the job reaches a terminal state (covers the apply phase after
+    the user confirms).
+    """
+    queue = job_step_queues.get(str(job_id))
+
+    try:
+        # ── Phase 1: stream agent steps until sentinel ────────────────────────
+        if queue is not None:
+            while True:
+                try:
+                    step = await asyncio.wait_for(queue.get(), timeout=_STEP_TIMEOUT)
+                except TimeoutError:
+                    break  # give up waiting; planning may have stalled
+
+                if step is None:
+                    break  # sentinel: planning done (success or failure)
+
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "modify_step",
+                            "job_id": str(job_id),
+                            "step": {
+                                "tool": step.tool,
+                                "label": step.label,
+                                "status": step.status,
+                            },
+                        }
+                    )
+                )
+
+        # ── Phase 2: poll until terminal (planned / failed / done / cancelled) ─
+        while True:
+            await asyncio.sleep(1.5)
             async with AsyncSessionLocal() as db:
                 job = await db.get(SelfModifyJob, job_id)
                 if job is None:
@@ -95,8 +136,11 @@ async def _poll_job_updates(websocket: WebSocket, job_id: uuid.UUID) -> None:
                 await websocket.send_text(json.dumps({"type": event_type, "job": _job_dict(job)}))
                 if job.status in _TERMINAL:
                     break
-        except Exception:
-            break
+
+    except Exception:
+        pass
+    finally:
+        job_step_queues.pop(str(job_id), None)
 
 
 # ── Modify job creation ───────────────────────────────────────────────────────
@@ -123,7 +167,11 @@ async def _create_modify_job(
         job_id = job.id
         job_dict = _job_dict(job)
 
-    # Launch background planning task (mirrors the REST endpoint behaviour)
+    # Create step queue BEFORE launching the background task so _bg_plan can
+    # find it immediately when it starts.
+    queue: asyncio.Queue = asyncio.Queue()
+    job_step_queues[str(job_id)] = queue
+
     asyncio.create_task(_bg_plan(job_id))  # noqa: RUF006
 
     return job_id, job_dict
@@ -147,7 +195,7 @@ async def websocket_butler(websocket: WebSocket) -> None:
         await websocket.send_text(json.dumps(data))
 
     handler = ButlerHandler()
-    poll_tasks: list[asyncio.Task] = []
+    watch_tasks: list[asyncio.Task] = []
 
     try:
         while True:
@@ -191,13 +239,13 @@ async def websocket_butler(websocket: WebSocket) -> None:
                         model=butler_model,
                     )
                     await send({"type": "modify_started", "job": job_dict})
-                    task = asyncio.create_task(_poll_job_updates(websocket, job_id))
-                    poll_tasks.append(task)
+                    task = asyncio.create_task(_watch_job(websocket, job_id))
+                    watch_tasks.append(task)
                 except Exception as exc:
                     await send({"type": "error", "detail": f"Failed to start modification: {exc}"})
 
     except WebSocketDisconnect:
         pass
     finally:
-        for task in poll_tasks:
+        for task in watch_tasks:
             task.cancel()

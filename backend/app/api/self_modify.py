@@ -11,6 +11,7 @@ repo ownership.  The /modify endpoints drive a two-step flow:
 
 import asyncio
 import json
+import os
 import secrets
 import uuid
 from datetime import UTC, datetime
@@ -34,6 +35,11 @@ from app.schemas.self_modify import (
     ModifyRequest,
     PlanOut,
 )
+
+# ── Per-job step queues for real-time WebSocket streaming ─────────────────────
+# Keyed by job ID (str). Created by butler_ws before launching _bg_plan.
+# Each item is an AgentStep (or None as a sentinel signalling planning is done).
+job_step_queues: dict[str, asyncio.Queue] = {}
 
 router = APIRouter(prefix="/self", tags=["self-modify"])
 
@@ -71,8 +77,17 @@ def _job_to_schema(job: SelfModifyJob) -> JobStatusResponse:
 
 
 async def _bg_plan(job_id: uuid.UUID) -> None:
-    """Background task: pending → planning → planned (or failed)."""
+    """Background task: pending → planning → planned (or failed).
+
+    Uses AgentModifier (tool-use agentic loop) when an Anthropic API key is
+    available; falls back to the single-shot CodeModifier otherwise.
+    Steps are streamed to the per-job queue in job_step_queues for real-time
+    WebSocket delivery.
+    """
+    from app.abilities.agent_modifier import AgentModifier, AgentStep
     from app.abilities.code_modifier import CodeModifier
+
+    queue: asyncio.Queue | None = job_step_queues.get(str(job_id))
 
     async with AsyncSessionLocal() as db:
         job = await db.get(SelfModifyJob, job_id)
@@ -83,12 +98,33 @@ async def _bg_plan(job_id: uuid.UUID) -> None:
             job.status = "planning"
             await db.commit()
 
-            modifier = CodeModifier()
-            plan = await modifier.plan(
-                instruction=job.instruction,
-                provider=job.provider,
-                model=job.model,
+            # Resolve Anthropic API key for the agentic planner
+            anthropic_key = (
+                await get_effective_setting(db, "anthropic_api_key", os.getenv("ANTHROPIC_API_KEY", "")) or None
             )
+
+            steps: list[dict] = []
+
+            async def on_step(step: AgentStep) -> None:
+                steps.append({"tool": step.tool, "label": step.label, "status": step.status})
+                if queue:
+                    await queue.put(step)
+
+            if anthropic_key:
+                agent = AgentModifier(api_key=anthropic_key)
+                plan = await agent.plan(
+                    instruction=job.instruction,
+                    model=job.model if job.provider == "anthropic" else "claude-sonnet-4-6",
+                    on_step=on_step,
+                )
+            else:
+                # Fall back to single-shot planner (no streaming steps)
+                modifier = CodeModifier()
+                plan = await modifier.plan(
+                    instruction=job.instruction,
+                    provider=job.provider,
+                    model=job.model,
+                )
 
             job.plan_json = json.dumps(
                 {
@@ -96,6 +132,7 @@ async def _bg_plan(job_id: uuid.UUID) -> None:
                     "commit_message": plan.commit_message,
                 }
             )
+            job.steps_json = json.dumps(steps)
             job.status = "planned"
             await db.commit()
 
@@ -104,6 +141,11 @@ async def _bg_plan(job_id: uuid.UUID) -> None:
             job.error = str(exc)
             job.completed_at = datetime.now(UTC)
             await db.commit()
+
+        finally:
+            # Send sentinel so the watch loop knows planning is done
+            if queue:
+                await queue.put(None)
 
 
 async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: str) -> None:

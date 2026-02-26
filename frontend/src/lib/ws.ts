@@ -61,11 +61,18 @@ export class SessionWebSocket {
 
 // ─── Butler WebSocket ──────────────────────────────────────────────────────────
 
+export interface AgentStep {
+  tool: string;
+  label: string;
+  status: string;
+}
+
 export type ButlerWsEvent =
   | { type: 'chunk'; content: string }
   | { type: 'done' }
   | { type: 'error'; detail: string }
   | { type: 'modify_started'; job: ButlerJob }
+  | { type: 'modify_step'; job_id: string; step: AgentStep }
   | { type: 'modify_update'; job: ButlerJob }
   | { type: 'modify_done'; job: ButlerJob };
 

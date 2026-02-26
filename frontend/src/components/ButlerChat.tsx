@@ -6,12 +6,13 @@
  * • Connects to /ws/butler via WebSocket
  * • Streams responses in real-time
  * • When the AI triggers a code modification, shows a job status card inline
+ *   with a live agent step log so the user can watch the agent work
  * • Users confirm / cancel jobs from within the chat
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { type ButlerJob, cancelModifyJob, confirmModifyJob } from '@/lib/api';
-import { ButlerWebSocket, type ButlerWsEvent } from '@/lib/ws';
+import { type AgentStep, ButlerWebSocket, type ButlerWsEvent } from '@/lib/ws';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ interface JobMessage {
   id: string;
   kind: 'job';
   job: ButlerJob;
+  steps: AgentStep[];
 }
 
 type ChatMessage = TextMessage | JobMessage;
@@ -43,7 +45,7 @@ const TERMINAL = new Set(['done', 'failed', 'cancelled']);
 
 const STATUS_LABELS: Record<string, string> = {
   pending:    'Queued…',
-  planning:   'AI is generating the plan…',
+  planning:   'Agent is exploring the codebase…',
   planned:    'Plan ready — review below',
   confirmed:  'Preparing to apply…',
   applying:   'Writing files…',
@@ -69,11 +71,44 @@ const STATUS_COLOR: Record<string, string> = {
   cancelled:  'bg-gray-100 text-gray-500',
 };
 
+// Maps tool name to a short prefix shown in the step log
+const STEP_PREFIX: Record<string, string> = {
+  list_files:  'ls',
+  read_file:   'rd',
+  search_code: 'gr',
+  plan_change: '→ ',
+  finish:      '✓ ',
+};
+
+const STEP_COLOR: Record<string, string> = {
+  list_files:  'text-gray-400',
+  read_file:   'text-gray-400',
+  search_code: 'text-gray-400',
+  plan_change: 'text-green-700 font-medium',
+  finish:      'text-green-700 font-medium',
+};
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function JobCard({ job, onUpdate }: { job: ButlerJob; onUpdate: (j: ButlerJob) => void }) {
+function JobCard({
+  job,
+  steps,
+  onUpdate,
+}: {
+  job: ButlerJob;
+  steps: AgentStep[];
+  onUpdate: (j: ButlerJob) => void;
+}) {
   const [working, setWorking] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const stepLogRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll the step log as new steps arrive
+  useEffect(() => {
+    if (stepLogRef.current) {
+      stepLogRef.current.scrollTop = stepLogRef.current.scrollHeight;
+    }
+  }, [steps]);
 
   async function confirm() {
     setWorking(true);
@@ -102,9 +137,11 @@ function JobCard({ job, onUpdate }: { job: ButlerJob; onUpdate: (j: ButlerJob) =
   }
 
   const badgeClass = STATUS_COLOR[job.status] ?? 'bg-gray-100 text-gray-600';
+  const isPlanning = job.status === 'planning';
 
   return (
     <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-sm">
+      {/* Header row */}
       <div className="mb-2 flex items-center gap-2">
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${badgeClass}`}>
           {job.status}
@@ -116,6 +153,37 @@ function JobCard({ job, onUpdate }: { job: ButlerJob; onUpdate: (j: ButlerJob) =
 
       <p className="text-gray-500">{STATUS_LABELS[job.status] ?? job.status}</p>
 
+      {/* ── Agent step log (visible while planning, and after if steps exist) ── */}
+      {steps.length > 0 && (
+        <div className="mt-2 rounded border border-gray-100 bg-gray-50">
+          <p className="px-2 pt-1.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400">
+            Agent log · {steps.length} step{steps.length !== 1 ? 's' : ''}
+          </p>
+          <div
+            ref={stepLogRef}
+            className="max-h-28 overflow-y-auto px-2 pb-1.5 pt-0.5"
+          >
+            {steps.map((step, i) => (
+              <div key={i} className="flex items-baseline gap-1.5 py-px font-mono text-[10px]">
+                <span className="w-4 shrink-0 text-gray-300">
+                  {STEP_PREFIX[step.tool] ?? '·'}
+                </span>
+                <span className={STEP_COLOR[step.tool] ?? 'text-gray-500'}>
+                  {step.label}
+                </span>
+              </div>
+            ))}
+            {isPlanning && (
+              <div className="flex items-center gap-1 py-px font-mono text-[10px] text-gray-400">
+                <span className="animate-pulse">•</span>
+                <span>thinking…</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Plan summary + confirm (after planning) ── */}
       {job.status === 'planned' && job.plan && (
         <div className="mt-2">
           <p className="mb-1 font-medium text-gray-700">
@@ -187,7 +255,7 @@ function MessageBubble({
   if (msg.kind === 'job') {
     return (
       <div className="px-3">
-        <JobCard job={msg.job} onUpdate={(j) => onJobUpdate(msg.id, j)} />
+        <JobCard job={msg.job} steps={msg.steps} onUpdate={(j) => onJobUpdate(msg.id, j)} />
       </div>
     );
   }
@@ -306,8 +374,17 @@ export default function ButlerChat() {
     } else if (event.type === 'modify_started') {
       setMessages((prev) => [
         ...prev,
-        { id: uid(), kind: 'job', job: event.job },
+        { id: uid(), kind: 'job', job: event.job, steps: [] },
       ]);
+    } else if (event.type === 'modify_step') {
+      // Append the agent step to the matching job message
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.kind === 'job' && m.job.id === event.job_id
+            ? { ...m, steps: [...m.steps, event.step] }
+            : m,
+        ),
+      );
     } else if (event.type === 'modify_update' || event.type === 'modify_done') {
       setMessages((prev) =>
         prev.map((m) =>
