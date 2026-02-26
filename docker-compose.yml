@@ -43,6 +43,8 @@ services:
       GITHUB_REPO_NAME:      ${GITHUB_REPO_NAME:-virtual_butler}
       REPO_ROOT:             /repo
       CORS_ORIGINS:          ${CORS_ORIGINS:-http://localhost:3000}
+    volumes:
+      - .:/repo
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:

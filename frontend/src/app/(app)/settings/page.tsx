@@ -77,7 +77,7 @@ function AppConfigSection() {
         value={form[key] ?? ''}
         onChange={(e) => set(key, e.target.value)}
         placeholder={isMasked(cfg[key]) ? '(already set — type to replace)' : placeholder}
-        className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
       />
     </div>
   );
@@ -116,7 +116,7 @@ function AppConfigSection() {
               <select
                 value={form['butler_provider'] ?? ''}
                 onChange={(e) => { set('butler_provider', e.target.value); }}
-                className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
               >
                 <option value="">— use default (anthropic) —</option>
                 <option value="anthropic">Anthropic</option>
@@ -149,7 +149,7 @@ function AppConfigSection() {
         <button
           onClick={save}
           disabled={saving}
-          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Save changes'}
         </button>

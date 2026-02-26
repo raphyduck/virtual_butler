@@ -57,12 +57,12 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STATUS_COLOR: Record<string, string> = {
   pending:    'bg-gray-100 text-gray-600',
-  planning:   'bg-blue-100 text-blue-700',
+  planning:   'bg-green-100 text-green-700',
   planned:    'bg-yellow-100 text-yellow-800',
-  confirmed:  'bg-blue-100 text-blue-700',
-  applying:   'bg-blue-100 text-blue-700',
-  committing: 'bg-blue-100 text-blue-700',
-  pushing:    'bg-blue-100 text-blue-700',
+  confirmed:  'bg-green-100 text-green-700',
+  applying:   'bg-green-100 text-green-700',
+  committing: 'bg-green-100 text-green-700',
+  pushing:    'bg-green-100 text-green-700',
   restarting: 'bg-orange-100 text-orange-700',
   done:       'bg-green-100 text-green-800',
   failed:     'bg-red-100 text-red-700',
@@ -204,7 +204,7 @@ function MessageBubble({
       <div
         className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
           isUser
-            ? 'rounded-br-sm bg-blue-600 text-white'
+            ? 'rounded-br-sm bg-green-600 text-white'
             : 'rounded-bl-sm bg-gray-100 text-gray-900'
         }`}
       >
@@ -364,19 +364,19 @@ export default function ButlerChat() {
       {open && (
         <div className="flex h-[520px] w-80 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3">
+          <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="text-base">🤵</span>
               <div>
                 <p className="text-sm font-semibold text-white">Virtual Butler</p>
-                <p className="text-[10px] text-blue-200">
+                <p className="text-[10px] text-green-200">
                   {connected ? 'Connected' : 'Connecting…'}
                 </p>
               </div>
             </div>
             <button
               onClick={() => setOpen(false)}
-              className="rounded p-1 text-blue-200 hover:bg-white/10 hover:text-white"
+              className="rounded p-1 text-green-200 hover:bg-white/10 hover:text-white"
               aria-label="Close butler chat"
             >
               ✕
@@ -412,7 +412,7 @@ export default function ButlerChat() {
                 placeholder="Ask me anything… (Enter to send)"
                 rows={1}
                 disabled={sending}
-                className="flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-60"
+                className="flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400 disabled:opacity-60"
                 style={{ maxHeight: '120px', overflowY: 'auto' }}
                 onInput={(e) => {
                   const el = e.currentTarget;
@@ -423,7 +423,7 @@ export default function ButlerChat() {
               <button
                 onClick={send}
                 disabled={sending || !input.trim()}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:opacity-40"
                 aria-label="Send"
               >
                 {sending ? (
@@ -448,7 +448,7 @@ export default function ButlerChat() {
         className={`flex h-12 w-12 items-center justify-center rounded-full text-xl shadow-lg transition-all hover:scale-105 ${
           open
             ? 'bg-gray-700 text-white'
-            : 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white'
+            : 'bg-gradient-to-br from-green-600 to-emerald-600 text-white'
         }`}
         aria-label={open ? 'Close butler chat' : 'Open butler chat'}
       >

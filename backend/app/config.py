@@ -1,3 +1,6 @@
+from pathlib import Path
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +35,18 @@ class Settings(BaseSettings):
 
     # Self-modification: path to the repository root accessible by the backend process
     repo_root: str = "/repo"
+
+    @model_validator(mode="after")
+    def resolve_repo_root(self) -> "Settings":
+        """If repo_root doesn't exist, walk up from this file to find the git root."""
+        if not Path(self.repo_root).exists():
+            candidate = Path(__file__).resolve().parent
+            while candidate != candidate.parent:
+                if (candidate / ".git").exists():
+                    self.repo_root = str(candidate)
+                    break
+                candidate = candidate.parent
+        return self
 
 
 settings = Settings()

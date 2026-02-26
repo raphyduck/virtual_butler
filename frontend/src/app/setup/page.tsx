@@ -118,7 +118,7 @@ export default function SetupPage() {
               <div
                 className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
                   step === s
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-green-600 text-white'
                     : (step === 'config' && s === 'account') || step === 'done'
                       ? 'bg-green-100 text-green-700'
                       : 'bg-gray-100 text-gray-400'
@@ -150,7 +150,7 @@ export default function SetupPage() {
                   value={form.email}
                   onChange={(e) => set('email', e.target.value)}
                   autoFocus
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                   placeholder="admin@example.com"
                 />
               </div>
@@ -160,7 +160,7 @@ export default function SetupPage() {
                   type="password"
                   value={form.password}
                   onChange={(e) => set('password', e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                   placeholder="Minimum 8 characters"
                 />
               </div>
@@ -171,12 +171,12 @@ export default function SetupPage() {
                   value={form.confirmPassword}
                   onChange={(e) => set('confirmPassword', e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && nextStep()}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
               <button
                 onClick={nextStep}
-                className="mt-2 w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                className="mt-2 w-full rounded-lg bg-green-600 py-2.5 text-sm font-semibold text-white hover:bg-green-700"
               >
                 Continue
               </button>
@@ -204,7 +204,7 @@ export default function SetupPage() {
                         type="password"
                         value={form[key as keyof FormData]}
                         onChange={(e) => set(key as keyof FormData, e.target.value)}
-                        className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                         placeholder="sk-…"
                       />
                     </div>
@@ -240,7 +240,7 @@ export default function SetupPage() {
                         type={key === 'github_client_secret' ? 'password' : 'text'}
                         value={form[key as keyof FormData]}
                         onChange={(e) => set(key as keyof FormData, e.target.value)}
-                        className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                         placeholder={placeholder}
                       />
                     </div>
@@ -258,7 +258,7 @@ export default function SetupPage() {
                 <button
                   onClick={submit}
                   disabled={loading}
-                  className="flex-1 rounded-lg bg-blue-600 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                  className="flex-1 rounded-lg bg-green-600 py-2.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
                 >
                   {loading ? 'Setting up…' : 'Finish setup'}
                 </button>
