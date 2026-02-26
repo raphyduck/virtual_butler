@@ -13,7 +13,7 @@ const navItems = [
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, init, logout } = useAuthStore();
+  const { isAuthenticated, isInitialized, init, logout } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -22,12 +22,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [init]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (isInitialized && !isAuthenticated) {
       router.replace('/login');
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, isInitialized, router]);
 
-  if (!isAuthenticated) return null;
+  if (!isInitialized) return null;
 
   return (
     <div className="flex min-h-screen flex-col">

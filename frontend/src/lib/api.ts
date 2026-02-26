@@ -83,6 +83,13 @@ export async function register(email: string, password: string): Promise<{ id: s
   });
 }
 
+export async function refreshTokens(refreshToken: string): Promise<TokenResponse> {
+  return request('/auth/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+}
+
 // ─── Abilities ───────────────────────────────────────────────────────────────
 
 export interface Ability {
