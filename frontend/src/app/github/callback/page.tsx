@@ -63,7 +63,7 @@ function GithubCallbackInner() {
         {error ? (
           <>
             <p className="mb-4 text-sm font-medium text-red-600">{error}</p>
-            <a href="/settings" className="text-sm text-blue-600 underline">
+            <a href="/settings" className="text-sm text-green-600 underline">
               Back to settings
             </a>
           </>
