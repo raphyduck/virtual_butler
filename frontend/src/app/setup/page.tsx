@@ -87,9 +87,9 @@ export default function SetupPage() {
         if (form[k]) settings[k] = form[k];
       }
 
-      const { access_token } = await runSetup(form.email, form.password, settings);
+      const { access_token, refresh_token } = await runSetup(form.email, form.password, settings);
       setToken(access_token);
-      login(access_token);
+      login(access_token, refresh_token);
       setStep('done');
       setTimeout(() => router.replace('/dashboard'), 1200);
     } catch (e: unknown) {

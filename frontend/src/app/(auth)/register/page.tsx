@@ -21,8 +21,8 @@ export default function RegisterPage() {
     try {
       await apiRegister(email, password);
       // auto-login after register
-      const { access_token } = await apiLogin(email, password);
-      login(access_token);
+      const { access_token, refresh_token } = await apiLogin(email, password);
+      login(access_token, refresh_token);
       router.push('/dashboard');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Registration failed');
