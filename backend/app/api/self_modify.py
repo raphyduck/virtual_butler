@@ -100,8 +100,7 @@ async def _bg_plan(job_id: uuid.UUID) -> None:
 
             # Resolve Anthropic API key for the agentic planner
             anthropic_key = (
-                await get_effective_setting(db, "anthropic_api_key", os.getenv("ANTHROPIC_API_KEY", ""))
-                or None
+                await get_effective_setting(db, "anthropic_api_key", os.getenv("ANTHROPIC_API_KEY", "")) or None
             )
 
             steps: list[dict] = []

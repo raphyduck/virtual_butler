@@ -69,9 +69,7 @@ _TOOLS: list[dict] = [
         "description": "Read the full contents of a file relative to the repository root.",
         "input_schema": {
             "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "Path relative to the repo root"}
-            },
+            "properties": {"path": {"type": "string", "description": "Path relative to the repo root"}},
             "required": ["path"],
         },
     },
@@ -220,10 +218,7 @@ class AgentModifier:
         messages: list[dict] = [
             {
                 "role": "user",
-                "content": (
-                    f"Repository files:\n```\n{file_tree}\n```\n\n"
-                    f"Instruction: {instruction}"
-                ),
+                "content": (f"Repository files:\n```\n{file_tree}\n```\n\nInstruction: {instruction}"),
             }
         ]
 
@@ -250,9 +245,7 @@ class AgentModifier:
                 # Human-readable step label
                 match block.name:
                     case "list_files":
-                        label = "Listing files" + (
-                            f" (filter: {inp['filter']})" if inp.get("filter") else ""
-                        )
+                        label = "Listing files" + (f" (filter: {inp['filter']})" if inp.get("filter") else "")
                     case "read_file":
                         label = f"Reading {inp.get('path', '')}"
                     case "search_code":
