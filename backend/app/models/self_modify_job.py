@@ -25,6 +25,7 @@ class SelfModifyJob(Base):
     provider: Mapped[str] = mapped_column(String(50), nullable=False, default="anthropic")
     model: Mapped[str] = mapped_column(String(100), nullable=False, default="claude-sonnet-4-6")
     plan_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON of the modification plan
+    steps_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of agent steps
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
