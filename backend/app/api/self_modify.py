@@ -12,6 +12,7 @@ repo ownership.  The /modify endpoints drive a two-step flow:
 import asyncio
 import json
 import os
+import re
 import secrets
 import uuid
 from datetime import UTC, datetime
@@ -20,7 +21,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
-from app.auth.github import check_repo_ownership, exchange_code_for_token, get_github_user, get_oauth_url
+from app.auth.github import (
+    check_repo_ownership,
+    create_github_pr,
+    exchange_code_for_token,
+    get_default_branch,
+    get_github_user,
+    get_oauth_url,
+)
 from app.config import settings
 from app.database import AsyncSessionLocal, get_db
 from app.models.app_setting import get_effective_setting
@@ -68,6 +76,7 @@ def _job_to_schema(job: SelfModifyJob) -> JobStatusResponse:
         plan=plan_out,
         error=job.error,
         commit_sha=job.commit_sha,
+        pr_url=job.pr_url,
         created_at=job.created_at,
         completed_at=job.completed_at,
     )
@@ -189,12 +198,36 @@ async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: s
                 await db.commit()
                 repo_owner = await get_effective_setting(db, "github_repo_owner", settings.github_repo_owner)
                 repo_name = await get_effective_setting(db, "github_repo_name", settings.github_repo_name)
+
+                # Push to a dedicated feature branch instead of main
+                slug = re.sub(r"[^a-z0-9]+", "-", plan.commit_message.lower())[:40].strip("-")
+                branch_name = f"butler/{slug}-{str(job_id).replace('-', '')[:8]}"
                 await asyncio.to_thread(
                     modifier.git_push_github,
                     github_token,
                     repo_owner,
                     repo_name,
+                    branch_name,
                 )
+
+                # Create a PR against the repo's default branch
+                default_branch = await get_default_branch(github_token, repo_owner, repo_name)
+                pr_body = (
+                    f"Changes proposed by the Personal Assistant.\n\n"
+                    f"**Instruction:** {job.instruction}\n\n"
+                    f"**Commit:** `{sha}`"
+                )
+                pr_url = await create_github_pr(
+                    token=github_token,
+                    owner=repo_owner,
+                    repo=repo_name,
+                    head=branch_name,
+                    base=default_branch,
+                    title=plan.commit_message,
+                    body=pr_body,
+                )
+                job.pr_url = pr_url
+                await db.commit()
             else:  # local
                 job.status = "restarting"
                 await db.commit()

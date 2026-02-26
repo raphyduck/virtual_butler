@@ -106,7 +106,7 @@ export default function SetupPage() {
       <div className="w-full max-w-lg">
         {/* Header */}
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-gray-900">Virtual Butler</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Personal Assistant</h1>
           <p className="mt-2 text-sm text-gray-500">First-time setup — create your admin account</p>
         </div>
 

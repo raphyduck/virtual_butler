@@ -76,6 +76,7 @@ const STEP_PREFIX: Record<string, string> = {
   list_files:  'ls',
   read_file:   'rd',
   search_code: 'gr',
+  edit_file:   'ed',
   plan_change: '→ ',
   finish:      '✓ ',
 };
@@ -84,6 +85,7 @@ const STEP_COLOR: Record<string, string> = {
   list_files:  'text-gray-400',
   read_file:   'text-gray-400',
   search_code: 'text-gray-400',
+  edit_file:   'text-blue-600 font-medium',
   plan_change: 'text-green-700 font-medium',
   finish:      'text-green-700 font-medium',
 };
@@ -233,9 +235,21 @@ function JobCard({
       )}
 
       {job.status === 'done' && (
-        <p className="mt-1 text-green-700">
-          ✓ Done{job.commit_sha ? ` · sha ${job.commit_sha.slice(0, 7)}` : ''}
-        </p>
+        <div className="mt-1 space-y-1">
+          <p className="text-green-700">
+            ✓ Done{job.commit_sha ? ` · sha ${job.commit_sha.slice(0, 7)}` : ''}
+          </p>
+          {job.pr_url && (
+            <a
+              href={job.pr_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block font-medium text-blue-600 hover:underline"
+            >
+              → Open Pull Request on GitHub
+            </a>
+          )}
+        </div>
       )}
 
       {job.status === 'failed' && job.error && (
@@ -445,7 +459,7 @@ export default function ButlerChat() {
             <div className="flex items-center gap-2">
               <span className="text-base">🤵</span>
               <div>
-                <p className="text-sm font-semibold text-white">Virtual Butler</p>
+                <p className="text-sm font-semibold text-white">Personal Assistant</p>
                 <p className="text-[10px] text-green-200">
                   {connected ? 'Connected' : 'Connecting…'}
                 </p>
@@ -465,7 +479,7 @@ export default function ButlerChat() {
             {messages.length === 0 && (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-gray-400 px-6">
                 <span className="text-3xl">🤵</span>
-                <p className="text-sm font-medium text-gray-600">Hello! I&apos;m your Virtual Butler.</p>
+                <p className="text-sm font-medium text-gray-600">Hello! I&apos;m your Personal Assistant.</p>
                 <p className="text-xs">
                   Ask me about usage stats, abilities, settings — or ask me to change something
                   about the platform and I&apos;ll implement it for you.
