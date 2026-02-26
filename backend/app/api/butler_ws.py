@@ -105,7 +105,7 @@ async def _watch_job(websocket: WebSocket, job_id: uuid.UUID) -> None:
             while True:
                 try:
                     step = await asyncio.wait_for(queue.get(), timeout=_STEP_TIMEOUT)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     break  # give up waiting; planning may have stalled
 
                 if step is None:
