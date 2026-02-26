@@ -34,19 +34,25 @@ class AgentStep:
 # ── Prompts & tool definitions ────────────────────────────────────────────────
 
 _SYSTEM = """\
-You are an expert software engineer embedded in the Virtual Butler platform.
+You are an expert software engineer embedded in the Personal Assistant platform.
 Your task: explore the repository and plan the minimal set of file changes
 needed to fulfill the user's instruction.
 
-Use the available tools to read files and search the codebase. Record every
-change you intend to make with `plan_change` — provide COMPLETE file contents
-for create/modify actions. When satisfied with your plan, call `finish`.
+Use the available tools to read files and search the codebase.
+
+## Recording changes
+- Use `edit_file` for targeted edits to existing files (find-and-replace a unique
+  string). This is preferred for small changes — no need to rewrite the whole file.
+- Use `plan_change` to create new files or completely rewrite an existing one.
+  For modify/create actions, `content` must be the complete new file content.
+
+When satisfied with your plan, call `finish`.
 
 Rules
 - Keep changes minimal and focused on the instruction
-- Always read a file before modifying it
+- Always read a file (or search its content) before modifying it
 - Do NOT touch files unrelated to the instruction
-- For modify/create actions, the `content` field must contain the full file
+- Make `old_string` in edit_file unique — add surrounding context if needed
 """
 
 _TOOLS: list[dict] = [
@@ -86,6 +92,26 @@ _TOOLS: list[dict] = [
                 },
             },
             "required": ["pattern"],
+        },
+    },
+    {
+        "name": "edit_file",
+        "description": (
+            "Apply a precise find-and-replace to a file. "
+            "Preferred over plan_change for small targeted edits to existing files. "
+            "old_string must occur exactly once — add surrounding context to ensure uniqueness."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Path relative to repo root"},
+                "old_string": {
+                    "type": "string",
+                    "description": "Exact string to replace (must occur exactly once in the file)",
+                },
+                "new_string": {"type": "string", "description": "Replacement string"},
+            },
+            "required": ["path", "old_string", "new_string"],
         },
     },
     {
@@ -160,6 +186,27 @@ class AgentModifier:
         except Exception as exc:
             return f"Error reading {path}: {exc}"
 
+    def _edit_file(self, path: str, old_string: str, new_string: str, planned: list) -> str:
+        """Find-and-replace in a file (or a previously planned version of it)."""
+        existing = next(
+            (c for c in planned if c.path == path and c.action in ("create", "modify") and c.content is not None),
+            None,
+        )
+        base = existing.content if existing else self._read_file(path)
+        if base.startswith("Error reading"):
+            return base
+        count = base.count(old_string)
+        if count == 0:
+            return f"Error: old_string not found in {path}"
+        if count > 1:
+            return f"Error: old_string appears {count} times in {path} — add more context to make it unique"
+        patched = base.replace(old_string, new_string, 1)
+        if existing:
+            existing.content = patched
+            return f"Edited {path} (patch applied to planned content)"
+        planned.append(FileChange(path=path, action="modify", content=patched))
+        return f"Recorded: modify {path} (via targeted edit)"
+
     def _search_code(self, pattern: str, path: str | None = None) -> str:
         target = str(self.repo_root / path) if path else str(self.repo_root)
         try:
@@ -188,6 +235,8 @@ class AgentModifier:
                 return self._read_file(inp.get("path", "")), False
             case "search_code":
                 return self._search_code(inp.get("pattern", ""), inp.get("path")), False
+            case "edit_file":
+                return self._edit_file(inp["path"], inp["old_string"], inp["new_string"], planned), False
             case "plan_change":
                 planned.append(
                     FileChange(
@@ -250,6 +299,8 @@ class AgentModifier:
                         label = f"Reading {inp.get('path', '')}"
                     case "search_code":
                         label = f"Searching '{inp.get('pattern', '')}'"
+                    case "edit_file":
+                        label = f"Editing {inp.get('path', '')}"
                     case "plan_change":
                         label = f"Planning {inp.get('action', 'change')}: {inp.get('path', '')}"
                     case "finish":

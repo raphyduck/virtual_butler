@@ -231,6 +231,7 @@ export interface ButlerJob {
   plan: ButlerJobPlan | null;
   error: string | null;
   commit_sha: string | null;
+  pr_url: string | null;
   created_at: string;
   completed_at: string | null;
 }

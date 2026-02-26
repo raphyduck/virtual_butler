@@ -78,6 +78,7 @@ def _job_dict(job: SelfModifyJob) -> dict:
         "plan": plan,
         "error": job.error,
         "commit_sha": job.commit_sha,
+        "pr_url": job.pr_url,
         "created_at": job.created_at.isoformat(),
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
     }

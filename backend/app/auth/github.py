@@ -52,6 +52,47 @@ async def get_github_user(token: str) -> dict:
         return dict(resp.json())
 
 
+async def get_default_branch(token: str, owner: str, repo: str) -> str:
+    """Return the default branch name of the repository (e.g. 'main' or 'master')."""
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{GITHUB_API_URL}/repos/{owner}/{repo}",
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                return str(resp.json().get("default_branch", "main"))
+    except Exception:
+        pass
+    return "main"
+
+
+async def create_github_pr(
+    token: str,
+    owner: str,
+    repo: str,
+    head: str,
+    base: str,
+    title: str,
+    body: str,
+) -> str:
+    """Create a pull request and return its HTML URL."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            json={"title": title, "body": body, "head": head, "base": base},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return str(resp.json()["html_url"])
+
+
 async def check_repo_ownership(token: str, owner: str, repo: str) -> bool:
     """Return True if the token's GitHub user is the owner of `owner/repo`."""
     try:

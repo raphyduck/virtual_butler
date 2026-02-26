@@ -16,6 +16,7 @@ WebSocket protocol extension (handled by the WS layer, not here):
 import json
 import os
 import re
+import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
@@ -25,13 +26,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.ability import Ability
 from app.models.app_setting import get_effective_setting
 from app.models.session import Session
+from app.models.user import User
 from app.providers import ChatMessage, get_provider
 
 # Matches a fenced ```action ... ``` block anywhere in the AI response
 _ACTION_RE = re.compile(r"```action\s*\n(.*?)\n```", re.DOTALL)
 
 _SYSTEM_TEMPLATE = """\
-You are the Virtual Butler, the built-in AI assistant for this platform.
+You are the Personal Assistant, the built-in AI assistant for this platform.
 
 ## Your capabilities
 
@@ -50,8 +52,9 @@ trigger a code modification job by embedding exactly ONE action block in your re
 Rules for action blocks
 - ALWAYS describe what you are about to do **before** the action block
 - Make the instruction detailed and unambiguous (it drives an AI code-editor)
-- Use `"mode": "local"` (applies changes and restarts this instance) for most requests
-- Use `"mode": "repo"` ONLY when the user explicitly requests a GitHub push
+- Use `"mode": "local"` to apply changes immediately (restarts this instance)
+- Use `"mode": "repo"` when GitHub is connected — changes are pushed to a feature
+  branch and a Pull Request is automatically created for the user to review and merge
 - Include only ONE action block per response
 - The user will review a preview of all file changes before anything is applied
 
@@ -99,12 +102,20 @@ class ButlerHandler:
             available.append("Google / Gemini")
         available.append("Ollama (local, no key needed)")
 
+        user = await db.get(User, uuid.UUID(user_id))
+        github_status = (
+            "connected — repo mode available (changes pushed as PR)"
+            if (user and user.github_is_repo_owner)
+            else "not connected (local mode only)"
+        )
+
         lines = [f"- Abilities: {ability_count}"]
         if ability_names:
             lines.append(f"  Names: {', '.join(ability_names)}")
         lines += [
             f"- Sessions total: {session_count} (active: {active_count})",
             f"- Available AI providers: {', '.join(available)}",
+            f"- GitHub: {github_status}",
         ]
         return "\n".join(lines)
 
