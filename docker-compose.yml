@@ -56,10 +56,14 @@ services:
     build:
       context: ./frontend
       target: production
+      args:
+        # NEXT_PUBLIC_* vars must be passed as build args so Next.js can embed
+        # them in the browser bundle at compile time.
+        NEXT_PUBLIC_API_URL:  ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_WS_URL:   ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
+        BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:8000}
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-      NEXT_PUBLIC_WS_URL:  ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
       # Server-only: used by the Next.js rewrite proxy (runs inside the container).
       BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:8000}
     ports:
