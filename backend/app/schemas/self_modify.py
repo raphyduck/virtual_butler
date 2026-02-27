@@ -19,7 +19,6 @@ class PlanOut(BaseModel):
 
 class ModifyRequest(BaseModel):
     instruction: str
-    mode: str  # "repo" | "local"
     provider: str = "anthropic"
     model: str = "claude-sonnet-4-6"
     provider_config_json: str | None = None

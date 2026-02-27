@@ -156,7 +156,6 @@ async def _watch_job(websocket: WebSocket, job_id: uuid.UUID) -> None:
 async def _create_modify_job(
     user_id: str,
     instruction: str,
-    mode: str,
     provider: str,
     model: str,
     github_token: str | None = None,
@@ -164,7 +163,7 @@ async def _create_modify_job(
     async with AsyncSessionLocal() as db:
         job = SelfModifyJob(
             user_id=uuid.UUID(user_id),
-            mode=mode if mode in ("repo", "local") else "local",
+            mode="repo",
             instruction=instruction,
             provider=provider,
             model=model,
@@ -239,18 +238,16 @@ async def websocket_butler(websocket: WebSocket) -> None:
             action = handler.pop_pending_action()
             if action and action.get("type") == "modify":
                 try:
-                    # Resolve GitHub token for repo-mode jobs
+                    # Resolve GitHub token
                     gh_token = None
-                    if action.get("mode") == "repo":
-                        async with AsyncSessionLocal() as udb:
-                            user = await udb.get(User, uuid.UUID(user_id))
-                            if user:
-                                gh_token = user.github_access_token
+                    async with AsyncSessionLocal() as udb:
+                        user = await udb.get(User, uuid.UUID(user_id))
+                        if user:
+                            gh_token = user.github_access_token
 
                     job_id, job_dict = await _create_modify_job(
                         user_id=user_id,
                         instruction=action.get("instruction", ""),
-                        mode=action.get("mode", "local"),
                         provider=butler_provider,
                         model=butler_model,
                         github_token=gh_token,

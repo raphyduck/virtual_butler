@@ -169,7 +169,6 @@ function JobCard({
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${badgeClass}`}>
           {job.status}
         </span>
-        <span className="text-gray-500">{job.mode} mode</span>
       </div>
 
       <p className="mb-1 italic text-gray-600 line-clamp-2">&quot;{job.instruction}&quot;</p>
