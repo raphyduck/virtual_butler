@@ -481,7 +481,7 @@ export default function ButlerChat() {
                 <span className="text-3xl">🤵</span>
                 <p className="text-sm font-medium text-gray-600">Hello! I&apos;m your Personal Assistant.</p>
                 <p className="text-xs">
-                  Ask me about usage stats, abilities, settings — or ask me to change something
+                  Ask me about usage stats, skills, settings — or ask me to change something
                   about the platform and I&apos;ll implement it for you.
                 </p>
               </div>

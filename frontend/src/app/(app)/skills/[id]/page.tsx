@@ -3,27 +3,27 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import AbilityForm from '@/components/AbilityForm';
-import { type Ability, type AbilityUpdate, getAbility, updateAbility } from '@/lib/api';
+import SkillForm from '@/components/SkillForm';
+import { type Skill, type SkillUpdate, getSkill, updateSkill } from '@/lib/api';
 
-export default function EditAbilityPage({ params }: { params: { id: string } }) {
+export default function EditSkillPage({ params }: { params: { id: string } }) {
   const router = useRouter();
-  const [ability, setAbility] = useState<Ability | null>(null);
+  const [skill, setSkill] = useState<Skill | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
-    getAbility(params.id)
-      .then(setAbility)
+    getSkill(params.id)
+      .then(setSkill)
       .catch((e) => setFetchError(e.message));
   }, [params.id]);
 
-  async function handleSubmit(data: AbilityUpdate) {
+  async function handleSubmit(data: SkillUpdate) {
     setSaveError(null);
     setLoading(true);
     try {
-      await updateAbility(params.id, data);
+      await updateSkill(params.id, data);
       router.push('/dashboard');
     } catch (e: unknown) {
       setSaveError(e instanceof Error ? e.message : 'Save failed');
@@ -35,7 +35,7 @@ export default function EditAbilityPage({ params }: { params: { id: string } }) 
   if (fetchError) {
     return <p className="text-sm text-red-600">{fetchError}</p>;
   }
-  if (!ability) {
+  if (!skill) {
     return <p className="text-sm text-gray-500">Loading…</p>;
   }
 
@@ -43,9 +43,9 @@ export default function EditAbilityPage({ params }: { params: { id: string } }) 
     <div>
       <div className="mb-6 flex items-center gap-3">
         <Link href="/dashboard" className="text-sm text-gray-400 hover:text-gray-600">← Back</Link>
-        <h1 className="text-xl font-semibold text-gray-900">Edit: {ability.name}</h1>
+        <h1 className="text-xl font-semibold text-gray-900">Edit: {skill.name}</h1>
       </div>
-      <AbilityForm initial={ability} onSubmit={handleSubmit} loading={loading} error={saveError} />
+      <SkillForm initial={skill} onSubmit={handleSubmit} loading={loading} error={saveError} />
     </div>
   );
 }

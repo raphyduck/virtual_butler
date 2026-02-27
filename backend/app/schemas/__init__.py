@@ -1,11 +1,3 @@
-from app.schemas.ability import (
-    AbilityCreate,
-    AbilityResponse,
-    AbilityUpdate,
-    DeliverableResponse,
-    MessageResponse,
-    SessionResponse,
-)
 from app.schemas.auth import (
     LoginRequest,
     RefreshRequest,
@@ -22,6 +14,14 @@ from app.schemas.self_modify import (
     ModifyRequest,
     PlanOut,
 )
+from app.schemas.skill import (
+    DeliverableResponse,
+    MessageResponse,
+    SessionResponse,
+    SkillCreate,
+    SkillResponse,
+    SkillUpdate,
+)
 
 __all__ = [
     "RegisterRequest",
@@ -29,9 +29,9 @@ __all__ = [
     "TokenResponse",
     "RefreshRequest",
     "UserResponse",
-    "AbilityCreate",
-    "AbilityUpdate",
-    "AbilityResponse",
+    "SkillCreate",
+    "SkillUpdate",
+    "SkillResponse",
     "SessionResponse",
     "MessageResponse",
     "DeliverableResponse",

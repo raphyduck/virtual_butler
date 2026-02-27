@@ -8,8 +8,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
-class Ability(Base):
-    __tablename__ = "abilities"
+class Skill(Base):
+    __tablename__ = "skills"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -34,7 +34,7 @@ class Ability(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    user: Mapped["User"] = relationship("User", back_populates="abilities")  # noqa: F821
+    user: Mapped["User"] = relationship("User", back_populates="skills")  # noqa: F821
     sessions: Mapped[list["Session"]] = relationship(  # noqa: F821
-        "Session", back_populates="ability", cascade="all, delete-orphan"
+        "Session", back_populates="skill", cascade="all, delete-orphan"
     )

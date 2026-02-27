@@ -1,0 +1,68 @@
+# Production compose — pulls pre-built images from GHCR.
+# Usage:  APP_VERSION=v1.0.0 docker compose -f docker-compose.prod.yml up -d
+
+services:
+
+  # ─── Database ───────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       virtual_butler
+      POSTGRES_USER:     butler
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-butler_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U butler -d virtual_butler"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─── Cache / queue ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  # ─── Backend ────────────────────────────────────────────────────────────────
+  backend:
+    image: ghcr.io/raphyduck/virtual_butler-backend:${APP_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:          postgresql+asyncpg://butler:${POSTGRES_PASSWORD:-butler_secret}@db:5432/virtual_butler
+      REDIS_URL:             redis://redis:6379
+      SECRET_KEY:            ${SECRET_KEY:-change_me_in_production}
+      DEBUG:                 "false"
+      GITHUB_CLIENT_ID:      ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET:  ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_CALLBACK_URL:   ${GITHUB_CALLBACK_URL:-http://localhost:3000/github/callback}
+      GITHUB_REPO_OWNER:     ${GITHUB_REPO_OWNER:-}
+      GITHUB_REPO_NAME:      ${GITHUB_REPO_NAME:-virtual_butler}
+      REPO_ROOT:             /repo
+      CORS_ORIGINS:          ${CORS_ORIGINS:-http://localhost:3000}
+      APP_VERSION:           ${APP_VERSION:-latest}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ─── Frontend ───────────────────────────────────────────────────────────────
+  frontend:
+    image: ghcr.io/raphyduck/virtual_butler-frontend:${APP_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:8000}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

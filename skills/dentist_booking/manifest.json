@@ -1,0 +1,12 @@
+{
+  "name": "dentist_booking",
+  "version": "0.1",
+  "description": "Find dentists and book appointments",
+  "permissions": {
+    "network": true,
+    "filesystem": false
+  },
+  "requires": {
+    "secrets": ["TWILIO_AUTH_TOKEN"]
+  }
+}

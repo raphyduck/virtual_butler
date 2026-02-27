@@ -7,7 +7,7 @@ import clsx from 'clsx';
 
 interface Props {
   sessionId: string;
-  abilityId: string;
+  skillId: string;
 }
 
 interface DisplayMessage {
@@ -17,7 +17,7 @@ interface DisplayMessage {
   streaming?: boolean;
 }
 
-export default function ChatWindow({ sessionId, abilityId }: Props) {
+export default function ChatWindow({ sessionId, skillId }: Props) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
   const [connected, setConnected] = useState(false);
@@ -28,7 +28,7 @@ export default function ChatWindow({ sessionId, abilityId }: Props) {
 
   // Load existing messages then connect WS
   useEffect(() => {
-    getMessages(abilityId, sessionId)
+    getMessages(skillId, sessionId)
       .then((msgs: ApiMessage[]) =>
         setMessages(
           msgs
@@ -70,7 +70,7 @@ export default function ChatWindow({ sessionId, abilityId }: Props) {
       clearTimeout(timer);
       ws.close();
     };
-  }, [sessionId, abilityId]);
+  }, [sessionId, skillId]);
 
   // Auto-scroll
   useEffect(() => {

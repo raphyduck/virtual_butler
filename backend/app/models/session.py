@@ -12,8 +12,8 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    ability_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("abilities.id", ondelete="CASCADE"), nullable=False, index=True
+    skill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("skills.id", ondelete="CASCADE"), nullable=False, index=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
@@ -25,7 +25,7 @@ class Session(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    ability: Mapped["Ability"] = relationship("Ability", back_populates="sessions")  # noqa: F821
+    skill: Mapped["Skill"] = relationship("Skill", back_populates="sessions")  # noqa: F821
     messages: Mapped[list["Message"]] = relationship(  # noqa: F821
         "Message", back_populates="session", cascade="all, delete-orphan", order_by="Message.created_at"
     )

@@ -1,12 +1,20 @@
 # Virtual Butler
 
-A web service that lets users define and run AI-powered pipelines — called **Abilities** — each capable of producing a specific, measurable deliverable (code, websites, videos, documents, etc.) and publishing it to a target platform.
+A **minimal, auto-extensible AI platform** with a Butler chat interface, installable Skills, and Docker-based auto-updates.
 
-Think of it as a personal AI workforce: you define what you want built and where it should go, the Butler does the rest.
+## Core Platform
+
+The core is intentionally small — it does only three things:
+
+1. **Chat Butler** — Web chat interface powered by LLM (Anthropic, OpenAI, Google, Ollama)
+2. **Skill Management** — Install, enable, disable extension skills
+3. **Auto-Update** — Docker image-based updates via GitHub Actions
+
+Everything else is implemented as **Skills** — installable extensions.
 
 ## Concept
 
-An **Ability** is a user-defined AI pipeline composed of:
+A **Skill** is a user-defined AI pipeline composed of:
 
 | Field | Description | Example |
 |-------|-------------|---------|
@@ -17,40 +25,44 @@ An **Ability** is a user-defined AI pipeline composed of:
 | `target` | Where to publish | `GitHub`, `YouTube`, `S3`, `FTP` |
 | `system_prompt` | AI role definition | Custom instructions for the agent |
 
-The user interacts with each Ability through a **chat interface** (similar to Claude Code or ChatGPT Codex). The AI executes the task end-to-end and delivers the output to the configured target.
-
 ## Architecture
 
 ```
 virtual_butler/
-├── backend/          # Python / FastAPI
+├── backend/              # Python / FastAPI
 │   ├── app/
-│   │   ├── api/      # REST + WebSocket endpoints
-│   │   ├── abilities/  # Ability engine & plugin system
-│   │   ├── providers/  # AI provider adapters (Anthropic, OpenAI, Google, Ollama)
-│   │   ├── targets/    # Publication target adapters (GitHub, S3, YouTube...)
-│   │   ├── models/     # SQLAlchemy ORM models
-│   │   └── auth/       # JWT authentication
+│   │   ├── api/          # REST + WebSocket endpoints
+│   │   ├── skills/       # Skill engine, butler handler, code modifier
+│   │   ├── providers/    # AI provider adapters
+│   │   ├── models/       # SQLAlchemy ORM models
+│   │   └── auth/         # JWT authentication
 │   └── pyproject.toml
-├── frontend/         # Next.js / React
-│   ├── app/
-│   │   ├── (auth)/   # Login / register pages
-│   │   ├── dashboard/ # Abilities overview
-│   │   └── ability/[id]/ # Chat interface per Ability
+├── frontend/             # Next.js / React
+│   ├── src/app/
+│   │   ├── (app)/dashboard/    # Skills overview
+│   │   ├── (app)/skill-store/  # Install extension skills
+│   │   └── (app)/settings/     # Platform settings
 │   └── package.json
-├── docs/
-│   └── architecture.md
-├── docker-compose.yml
-└── LICENSE
+├── skills/               # Installable extension skills
+│   └── dentist_booking/  # Example skill
+│       ├── manifest.json
+│       └── runtime.py
+├── .github/workflows/
+│   ├── ci.yml            # Lint + test
+│   └── build-images.yml  # Build & push Docker images on release
+├── docker-compose.yml          # Development
+├── docker-compose.prod.yml     # Production (pre-built images)
+└── docker-compose.override.yml # Dev hot-reload
 ```
 
 ## Tech Stack
 
-- **Backend**: Python 3.12, FastAPI, SQLAlchemy, PostgreSQL, Redis (task queue)
-- **Frontend**: Next.js 15, React, TypeScript, Tailwind CSS
+- **Backend**: Python 3.12, FastAPI, SQLAlchemy, PostgreSQL, Redis
+- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS
 - **Auth**: JWT (access + refresh tokens)
-- **AI Providers**: Anthropic, OpenAI, Google Gemini, Ollama (plugin architecture)
+- **AI Providers**: Anthropic, OpenAI, Google Gemini, Ollama
 - **Realtime**: WebSockets for streaming AI responses
+- **Deploy**: Docker + GitHub Actions (GHCR)
 
 ## Getting Started
 
@@ -79,7 +91,7 @@ Open `.env` and fill in the required values:
 |----------|----------|-------------|
 | `POSTGRES_PASSWORD` | Yes | Password for the PostgreSQL `butler` user |
 | `SECRET_KEY` | Yes | Long random string for JWT signing — generate with `openssl rand -hex 32` |
-| `ANTHROPIC_API_KEY` | Optional | Anthropic API key (can also be set per-ability) |
+| `ANTHROPIC_API_KEY` | Optional | Anthropic API key (can also be set per-skill) |
 | `OPENAI_API_KEY` | Optional | OpenAI API key |
 | `GOOGLE_API_KEY` | Optional | Google Gemini API key |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | Optional | GitHub OAuth app credentials (self-modification feature) |
@@ -94,7 +106,13 @@ docker compose up
 
 The `docker-compose.override.yml` file is applied automatically and enables live-reload, exposes the database on port `5432`, and Redis on port `6379`.
 
-**Production** (optimised builds, no volume mounts):
+**Production** (pre-built images from GHCR):
+
+```bash
+APP_VERSION=v1.0.0 docker compose -f docker-compose.prod.yml up -d
+```
+
+**Production** (local build, no volume mounts):
 
 ```bash
 docker compose -f docker-compose.yml up -d

@@ -1,21 +1,21 @@
 'use client';
 
-import { type Ability, type AbilityCreate } from '@/lib/api';
+import { type Skill, type SkillCreate } from '@/lib/api';
 
 const PROVIDERS = ['anthropic', 'openai', 'google', 'ollama'] as const;
 const DELIVERABLE_TYPES = ['code', 'website', 'document', 'video', 'other'] as const;
 const TARGET_TYPES = ['github', 's3', 'local', 'ftp', 'youtube', 'other'] as const;
 
-type FormData = AbilityCreate;
+type FormData = SkillCreate;
 
 interface Props {
-  initial?: Partial<Ability>;
+  initial?: Partial<Skill>;
   onSubmit: (data: FormData) => Promise<void>;
   loading: boolean;
   error: string | null;
 }
 
-export default function AbilityForm({ initial, onSubmit, loading, error }: Props) {
+export default function SkillForm({ initial, onSubmit, loading, error }: Props) {
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -109,7 +109,7 @@ export default function AbilityForm({ initial, onSubmit, loading, error }: Props
       />
 
       <button type="submit" disabled={loading} className="btn-primary w-full">
-        {loading ? 'Saving…' : 'Save ability'}
+        {loading ? 'Saving…' : 'Save skill'}
       </button>
     </form>
   );

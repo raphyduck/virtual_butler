@@ -4,7 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
-class AbilityCreate(BaseModel):
+class SkillCreate(BaseModel):
     name: str
     description: str | None = None
     provider: str
@@ -16,7 +16,7 @@ class AbilityCreate(BaseModel):
     provider_config: str | None = None  # JSON: {"api_key": "...", "base_url": "..."}
 
 
-class AbilityUpdate(BaseModel):
+class SkillUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     provider: str | None = None
@@ -28,7 +28,7 @@ class AbilityUpdate(BaseModel):
     provider_config: str | None = None
 
 
-class AbilityResponse(BaseModel):
+class SkillResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     name: str
@@ -47,12 +47,12 @@ class AbilityResponse(BaseModel):
 
 
 class SessionCreate(BaseModel):
-    pass  # no body needed — ability_id comes from URL
+    pass  # no body needed — skill_id comes from URL
 
 
 class SessionResponse(BaseModel):
     id: uuid.UUID
-    ability_id: uuid.UUID
+    skill_id: uuid.UUID
     user_id: uuid.UUID
     status: str
     created_at: datetime
