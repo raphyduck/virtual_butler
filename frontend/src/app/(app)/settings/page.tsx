@@ -67,7 +67,8 @@ function AppConfigSection() {
     }
   }
 
-  if (!cfg) return <p className="text-sm text-gray-400">Loading…</p>;
+  if (!cfg && !error) return <p className="text-sm text-gray-400">Loading…</p>;
+  if (!cfg && error) return <p className="text-sm text-red-600">{error}</p>;
 
   const field = (key: keyof AppSettings, label: string, placeholder = '', secret = false) => (
     <div key={key}>
