@@ -93,8 +93,8 @@ async def _bg_plan(job_id: uuid.UUID) -> None:
     Steps are streamed to the per-job queue in job_step_queues for real-time
     WebSocket delivery.
     """
-    from app.abilities.agent_modifier import AgentModifier, AgentStep
-    from app.abilities.code_modifier import CodeModifier
+    from app.skills.agent_modifier import AgentModifier, AgentStep
+    from app.skills.code_modifier import CodeModifier
 
     queue: asyncio.Queue | None = job_step_queues.get(str(job_id))
 
@@ -159,7 +159,7 @@ async def _bg_plan(job_id: uuid.UUID) -> None:
 
 async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: str) -> None:
     """Background task: confirmed → applying → committing → pushing|restarting → done (or failed)."""
-    from app.abilities.code_modifier import CodeModifier, FileChange, ModificationPlan
+    from app.skills.code_modifier import CodeModifier, FileChange, ModificationPlan
 
     async with AsyncSessionLocal() as db:
         job = await db.get(SelfModifyJob, job_id)

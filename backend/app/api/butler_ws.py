@@ -30,12 +30,12 @@ import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import JWTError
 
-from app.abilities.butler_handler import ButlerHandler
 from app.api.self_modify import _bg_plan, job_step_queues
 from app.auth.jwt import decode_token
 from app.database import AsyncSessionLocal
 from app.models.app_setting import get_effective_setting
 from app.models.self_modify_job import SelfModifyJob
+from app.skills.butler_handler import ButlerHandler
 
 router = APIRouter()
 

@@ -18,8 +18,8 @@ from pathlib import Path
 
 import anthropic
 
-from app.abilities.code_modifier import FileChange, ModificationPlan
 from app.config import settings
+from app.skills.code_modifier import FileChange, ModificationPlan
 
 # ── Step type ─────────────────────────────────────────────────────────────────
 

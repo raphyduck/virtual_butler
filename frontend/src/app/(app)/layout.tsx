@@ -9,6 +9,7 @@ import clsx from 'clsx';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard' },
+  { href: '/skill-store', label: 'Skill Store' },
   { href: '/settings', label: 'Settings' },
 ];
 

@@ -3,27 +3,27 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { type Ability, createSession, deleteAbility, listAbilities } from '@/lib/api';
+import { type Skill, createSession, deleteSkill, listSkills } from '@/lib/api';
 
 export default function DashboardPage() {
-  const [abilities, setAbilities] = useState<Ability[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [startingId, setStartingId] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    listAbilities()
-      .then(setAbilities)
+    listSkills()
+      .then(setSkills)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleStart(ability: Ability) {
-    setStartingId(ability.id);
+  async function handleStart(skill: Skill) {
+    setStartingId(skill.id);
     try {
-      const session = await createSession(ability.id);
-      router.push(`/sessions/${session.id}?abilityId=${ability.id}`);
+      const session = await createSession(skill.id);
+      router.push(`/sessions/${session.id}?skillId=${skill.id}`);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not start session');
       setStartingId(null);
@@ -31,10 +31,10 @@ export default function DashboardPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this ability?')) return;
+    if (!confirm('Delete this skill?')) return;
     try {
-      await deleteAbility(id);
-      setAbilities((prev) => prev.filter((a) => a.id !== id));
+      await deleteSkill(id);
+      setSkills((prev) => prev.filter((a) => a.id !== id));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Delete failed');
     }
@@ -47,9 +47,9 @@ export default function DashboardPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">My Abilities</h1>
-        <Link href="/abilities/new" className="btn-primary">
-          + New ability
+        <h1 className="text-xl font-semibold text-gray-900">My Skills</h1>
+        <Link href="/skills/new" className="btn-primary">
+          + New skill
         </Link>
       </div>
 
@@ -57,16 +57,16 @@ export default function DashboardPage() {
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
-      {abilities.length === 0 ? (
+      {skills.length === 0 ? (
         <div className="card flex flex-col items-center py-16 text-center">
-          <p className="text-gray-500">No abilities yet.</p>
-          <Link href="/abilities/new" className="btn-primary mt-4">
-            Create your first ability
+          <p className="text-gray-500">No skills yet.</p>
+          <Link href="/skills/new" className="btn-primary mt-4">
+            Create your first skill
           </Link>
         </div>
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {abilities.map((a) => (
+          {skills.map((a) => (
             <li key={a.id} className="card flex flex-col gap-3">
               <div className="flex-1">
                 <h2 className="font-medium text-gray-900">{a.name}</h2>
@@ -88,7 +88,7 @@ export default function DashboardPage() {
                 >
                   {startingId === a.id ? 'Starting…' : 'Start session'}
                 </button>
-                <Link href={`/abilities/${a.id}`} className="btn-ghost text-xs">
+                <Link href={`/skills/${a.id}`} className="btn-ghost text-xs">
                   Edit
                 </Link>
                 <button

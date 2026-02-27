@@ -90,9 +90,9 @@ export async function refreshTokens(refreshToken: string): Promise<TokenResponse
   });
 }
 
-// ─── Abilities ───────────────────────────────────────────────────────────────
+// ─── Skills ─────────────────────────────────────────────────────────────────
 
-export interface Ability {
+export interface Skill {
   id: string;
   user_id: string;
   name: string;
@@ -108,23 +108,23 @@ export interface Ability {
   updated_at: string;
 }
 
-export type AbilityCreate = Omit<Ability, 'id' | 'user_id' | 'created_at' | 'updated_at'>;
-export type AbilityUpdate = Partial<AbilityCreate>;
+export type SkillCreate = Omit<Skill, 'id' | 'user_id' | 'created_at' | 'updated_at'>;
+export type SkillUpdate = Partial<SkillCreate>;
 
-export const listAbilities = (): Promise<Ability[]> => request('/abilities');
-export const getAbility = (id: string): Promise<Ability> => request(`/abilities/${id}`);
-export const createAbility = (data: AbilityCreate): Promise<Ability> =>
-  request('/abilities', { method: 'POST', body: JSON.stringify(data) });
-export const updateAbility = (id: string, data: AbilityUpdate): Promise<Ability> =>
-  request(`/abilities/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-export const deleteAbility = (id: string): Promise<void> =>
-  request(`/abilities/${id}`, { method: 'DELETE' });
+export const listSkills = (): Promise<Skill[]> => request('/skills');
+export const getSkill = (id: string): Promise<Skill> => request(`/skills/${id}`);
+export const createSkill = (data: SkillCreate): Promise<Skill> =>
+  request('/skills', { method: 'POST', body: JSON.stringify(data) });
+export const updateSkill = (id: string, data: SkillUpdate): Promise<Skill> =>
+  request(`/skills/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteSkill = (id: string): Promise<void> =>
+  request(`/skills/${id}`, { method: 'DELETE' });
 
 // ─── Sessions ────────────────────────────────────────────────────────────────
 
 export interface Session {
   id: string;
-  ability_id: string;
+  skill_id: string;
   user_id: string;
   status: string;
   created_at: string;
@@ -139,12 +139,12 @@ export interface ChatMessage {
   created_at: string;
 }
 
-export const createSession = (abilityId: string): Promise<Session> =>
-  request(`/abilities/${abilityId}/sessions`, { method: 'POST', body: '{}' });
-export const listSessions = (abilityId: string): Promise<Session[]> =>
-  request(`/abilities/${abilityId}/sessions`);
-export const getMessages = (abilityId: string, sessionId: string): Promise<ChatMessage[]> =>
-  request(`/abilities/${abilityId}/sessions/${sessionId}/messages`);
+export const createSession = (skillId: string): Promise<Session> =>
+  request(`/skills/${skillId}/sessions`, { method: 'POST', body: '{}' });
+export const listSessions = (skillId: string): Promise<Session[]> =>
+  request(`/skills/${skillId}/sessions`);
+export const getMessages = (skillId: string, sessionId: string): Promise<ChatMessage[]> =>
+  request(`/skills/${skillId}/sessions/${sessionId}/messages`);
 
 // ─── Self-modification ────────────────────────────────────────────────────────
 
@@ -208,7 +208,53 @@ export const confirmModifyJob = (jobId: string): Promise<ModifyJob> =>
 export const cancelModifyJob = (jobId: string): Promise<ModifyJob> =>
   request(`/self/modify/${jobId}/cancel`, { method: 'POST' });
 
-// ─── Butler chat ───────────────────────────────────────────────────────────────
+// ─── Skill Store ─────────────────────────────────────────────────────────────
+
+export interface SkillManifest {
+  name: string;
+  version: string | null;
+  description: string | null;
+  permissions: Record<string, boolean> | null;
+  requires: Record<string, string[]> | null;
+  _dir: string | null;
+}
+
+export interface InstalledSkillInfo {
+  id: string;
+  name: string;
+  version: string;
+  description: string | null;
+  directory: string;
+  enabled: boolean;
+  installed_at: string;
+}
+
+export const getAvailableSkills = (): Promise<SkillManifest[]> => request('/skill-store/available');
+export const getInstalledSkills = (): Promise<InstalledSkillInfo[]> => request('/skill-store/installed');
+export const installSkillFromStore = (directory: string): Promise<InstalledSkillInfo> =>
+  request('/skill-store/install', { method: 'POST', body: JSON.stringify({ directory }) });
+export const enableInstalledSkill = (id: string): Promise<InstalledSkillInfo> =>
+  request(`/skill-store/${id}/enable`, { method: 'POST' });
+export const disableInstalledSkill = (id: string): Promise<InstalledSkillInfo> =>
+  request(`/skill-store/${id}/disable`, { method: 'POST' });
+
+// ─── Update ──────────────────────────────────────────────────────────────────
+
+export interface UpdateStatus {
+  current_version: string;
+  available_version: string | null;
+}
+
+export interface UpdateResult {
+  success: boolean;
+  message: string;
+}
+
+export const getUpdateStatus = (): Promise<UpdateStatus> => request('/update/status');
+export const applyUpdate = (): Promise<UpdateResult> => request('/update/apply', { method: 'POST' });
+export const rollbackUpdate = (): Promise<UpdateResult> => request('/update/rollback', { method: 'POST' });
+
+// ─── Butler chat ─────────────────────────────────────────────────────────────
 // The butler WebSocket streams these lightweight job snapshots (no file content).
 
 export interface ButlerJobPlanChange {

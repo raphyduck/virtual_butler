@@ -7,10 +7,10 @@ import ChatWindow from '@/components/ChatWindow';
 
 function SessionContent({ sessionId }: { sessionId: string }) {
   const params = useSearchParams();
-  const abilityId = params.get('abilityId') ?? '';
+  const skillId = params.get('skillId') ?? '';
 
-  if (!abilityId) {
-    return <p className="text-sm text-red-500">Missing abilityId param.</p>;
+  if (!skillId) {
+    return <p className="text-sm text-red-500">Missing skillId param.</p>;
   }
 
   return (
@@ -20,7 +20,7 @@ function SessionContent({ sessionId }: { sessionId: string }) {
         <span className="text-sm text-gray-300">|</span>
         <span className="text-sm text-gray-500 font-mono truncate max-w-xs">{sessionId}</span>
       </div>
-      <ChatWindow sessionId={sessionId} abilityId={abilityId} />
+      <ChatWindow sessionId={sessionId} skillId={skillId} />
     </div>
   );
 }

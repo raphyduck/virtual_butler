@@ -1,7 +1,7 @@
-"""Orchestrates a chat turn for an Ability session.
+"""Orchestrates a chat turn for a Skill session.
 
 Flow:
-1. Load session + ability from DB
+1. Load session + skill from DB
 2. Persist user message
 3. Load full message history
 4. Call AI provider (streaming)
@@ -14,9 +14,9 @@ from collections.abc import AsyncIterator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.ability import Ability
 from app.models.message import Message
 from app.models.session import Session
+from app.models.skill import Skill
 from app.providers import ChatMessage, get_provider
 
 
@@ -24,11 +24,11 @@ class SessionNotFound(Exception):
     pass
 
 
-class AbilitySessionHandler:
+class SkillSessionHandler:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
 
-    async def _load_session(self, session_id: str, user_id: str) -> tuple[Session, Ability]:
+    async def _load_session(self, session_id: str, user_id: str) -> tuple[Session, Skill]:
         result = await self._db.execute(
             select(Session).where(
                 Session.id == session_id,  # type: ignore[arg-type]
@@ -39,12 +39,12 @@ class AbilitySessionHandler:
         if session is None:
             raise SessionNotFound(f"Session {session_id} not found")
 
-        ability_result = await self._db.execute(select(Ability).where(Ability.id == session.ability_id))
-        ability = ability_result.scalar_one_or_none()
-        if ability is None:
-            raise SessionNotFound(f"Ability for session {session_id} not found")
+        skill_result = await self._db.execute(select(Skill).where(Skill.id == session.skill_id))
+        skill = skill_result.scalar_one_or_none()
+        if skill is None:
+            raise SessionNotFound(f"Skill for session {session_id} not found")
 
-        return session, ability
+        return session, skill
 
     async def _load_history(self, session_id: str) -> list[ChatMessage]:
         result = await self._db.execute(
@@ -75,18 +75,18 @@ class AbilitySessionHandler:
 
         Yields text chunks for streaming to the WebSocket client.
         """
-        session, ability = await self._load_session(session_id, user_id)
+        session, skill = await self._load_session(session_id, user_id)
 
         await self._save_message(session_id, "user", user_message)
         await self._set_status(session, "running")
         await self._db.commit()
 
         history = await self._load_history(session_id)
-        provider = get_provider(ability.provider, ability.model, ability.provider_config)
+        provider = get_provider(skill.provider, skill.model, skill.provider_config)
 
         full_response: list[str] = []
         try:
-            async for chunk in provider.stream(history, ability.system_prompt):
+            async for chunk in provider.stream(history, skill.system_prompt):
                 full_response.append(chunk)
                 yield chunk
         except Exception:

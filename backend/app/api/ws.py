@@ -1,4 +1,4 @@
-"""WebSocket endpoint for real-time streaming chat within an Ability session.
+"""WebSocket endpoint for real-time streaming chat within a Skill session.
 
 Protocol (JSON over WebSocket):
 
@@ -21,9 +21,9 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.abilities import AbilitySessionHandler, SessionNotFound
 from app.auth.jwt import decode_token
 from app.database import AsyncSessionLocal
+from app.skills import SessionNotFound, SkillSessionHandler
 
 router = APIRouter()
 
@@ -79,7 +79,7 @@ async def _handle_turn(
     async def send(data: dict) -> None:
         await websocket.send_text(json.dumps(data))
 
-    handler = AbilitySessionHandler(db)
+    handler = SkillSessionHandler(db)
     try:
         async for chunk in handler.run(session_id, user_id, user_message):
             await send({"type": "chunk", "content": chunk})

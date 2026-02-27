@@ -24,8 +24,8 @@ class User(Base):
     github_access_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
     github_is_repo_owner: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    abilities: Mapped[list["Ability"]] = relationship(  # noqa: F821
-        "Ability", back_populates="user", cascade="all, delete-orphan"
+    skills: Mapped[list["Skill"]] = relationship(  # noqa: F821
+        "Skill", back_populates="user", cascade="all, delete-orphan"
     )
     self_modify_jobs: Mapped[list["SelfModifyJob"]] = relationship(  # noqa: F821
         "SelfModifyJob", back_populates="user", cascade="all, delete-orphan"

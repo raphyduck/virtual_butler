@@ -23,9 +23,10 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.ability import Ability
 from app.models.app_setting import get_effective_setting
+from app.models.conversation import ButlerMessage, Conversation
 from app.models.session import Session
+from app.models.skill import Skill
 from app.models.user import User
 from app.providers import ChatMessage, get_provider
 
@@ -39,7 +40,7 @@ You are the Personal Assistant, the built-in AI assistant for this platform.
 
 ### Answering questions
 Answer questions about the platform and how to use it. Provide usage statistics,
-explain features, and guide users through abilities, sessions, AI providers, and settings.
+explain features, and guide users through skills, sessions, AI providers, and settings.
 
 ### Changing the platform
 When a user asks you to change something — UI, appearance, features, behaviour — you can
@@ -66,22 +67,25 @@ Today's date: {date}\
 
 
 class ButlerHandler:
-    """Stateful handler for a butler chat session (one per WebSocket connection)."""
+    """Stateful handler for a butler chat session (one per WebSocket connection).
+
+    Persists conversation history to the conversations / butler_messages tables
+    so that chat survives page reloads.
+    """
 
     def __init__(self) -> None:
         self._history: list[ChatMessage] = []
         self._pending_action: dict | None = None
+        self._conversation_id: uuid.UUID | None = None
 
     # ── Context helpers ────────────────────────────────────────────────────────
 
     async def _build_context(self, db: AsyncSession, user_id: str) -> str:
-        ability_count: int = (
-            await db.execute(select(func.count()).select_from(Ability).where(Ability.user_id == user_id))
+        skill_count: int = (
+            await db.execute(select(func.count()).select_from(Skill).where(Skill.user_id == user_id))
         ).scalar() or 0
 
-        ability_names = list(
-            (await db.execute(select(Ability.name).where(Ability.user_id == user_id).limit(20))).scalars()
-        )
+        skill_names = list((await db.execute(select(Skill.name).where(Skill.user_id == user_id).limit(20))).scalars())
 
         session_count: int = (
             await db.execute(select(func.count()).select_from(Session).where(Session.user_id == user_id))
@@ -109,9 +113,9 @@ class ButlerHandler:
             else "not connected (local mode only)"
         )
 
-        lines = [f"- Abilities: {ability_count}"]
-        if ability_names:
-            lines.append(f"  Names: {', '.join(ability_names)}")
+        lines = [f"- Skills: {skill_count}"]
+        if skill_names:
+            lines.append(f"  Names: {', '.join(skill_names)}")
         lines += [
             f"- Sessions total: {session_count} (active: {active_count})",
             f"- Available AI providers: {', '.join(available)}",
@@ -144,6 +148,16 @@ class ButlerHandler:
         action, self._pending_action = self._pending_action, None
         return action
 
+    async def _ensure_conversation(self, db: AsyncSession, user_id: str) -> uuid.UUID:
+        """Create a conversation row on first message, reuse afterwards."""
+        if self._conversation_id is not None:
+            return self._conversation_id
+        conv = Conversation(user_id=uuid.UUID(user_id))
+        db.add(conv)
+        await db.flush()
+        self._conversation_id = conv.id
+        return conv.id
+
     async def run(
         self,
         db: AsyncSession,
@@ -155,11 +169,17 @@ class ButlerHandler:
         After the stream ends, any detected ```action``` block is stored in
         `_pending_action` and can be retrieved via `pop_pending_action()`.
         """
+        conv_id = await self._ensure_conversation(db, user_id)
+
         context = await self._build_context(db, user_id)
         system_prompt = _SYSTEM_TEMPLATE.format(
             context=context,
             date=datetime.now(UTC).strftime("%Y-%m-%d"),
         )
+
+        # Persist user message
+        db.add(ButlerMessage(conversation_id=conv_id, role="user", content=user_message))
+        await db.flush()
 
         self._history.append(ChatMessage(role="user", content=user_message))
 
@@ -176,6 +196,10 @@ class ButlerHandler:
 
         assistant_content = "".join(chunks)
         self._history.append(ChatMessage(role="assistant", content=assistant_content))
+
+        # Persist assistant message
+        db.add(ButlerMessage(conversation_id=conv_id, role="assistant", content=assistant_content))
+        await db.commit()
 
         # Detect action block
         match = _ACTION_RE.search(assistant_content)
