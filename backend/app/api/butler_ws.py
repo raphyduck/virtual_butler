@@ -35,11 +35,14 @@ from app.auth.jwt import decode_token
 from app.database import AsyncSessionLocal
 from app.models.app_setting import get_effective_setting
 from app.models.self_modify_job import SelfModifyJob
+from app.models.user import User
 from app.skills.butler_handler import ButlerHandler
 
 router = APIRouter()
 
 _TERMINAL = frozenset({"done", "failed", "cancelled"})
+# States where the watcher should stop polling (user action required)
+_PAUSE = frozenset({"awaiting_merge"})
 
 # Maximum seconds to wait for the next agent step before falling back to DB poll
 _STEP_TIMEOUT = 120.0
@@ -79,6 +82,7 @@ def _job_dict(job: SelfModifyJob) -> dict:
         "error": job.error,
         "commit_sha": job.commit_sha,
         "pr_url": job.pr_url,
+        "pr_number": job.pr_number,
         "created_at": job.created_at.isoformat(),
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
     }
@@ -126,16 +130,18 @@ async def _watch_job(websocket: WebSocket, job_id: uuid.UUID) -> None:
                     )
                 )
 
-        # ── Phase 2: poll until terminal (planned / failed / done / cancelled) ─
+        # ── Phase 2: poll until terminal or paused (awaiting user action) ────
         while True:
             await asyncio.sleep(1.5)
             async with AsyncSessionLocal() as db:
                 job = await db.get(SelfModifyJob, job_id)
                 if job is None:
                     break
-                event_type = "modify_done" if job.status in _TERMINAL else "modify_update"
+                is_done = job.status in _TERMINAL
+                is_paused = job.status in _PAUSE
+                event_type = "modify_done" if is_done else "modify_update"
                 await websocket.send_text(json.dumps({"type": event_type, "job": _job_dict(job)}))
-                if job.status in _TERMINAL:
+                if is_done or is_paused:
                     break
 
     except Exception:
@@ -153,6 +159,7 @@ async def _create_modify_job(
     mode: str,
     provider: str,
     model: str,
+    github_token: str | None = None,
 ) -> tuple[uuid.UUID, dict]:
     async with AsyncSessionLocal() as db:
         job = SelfModifyJob(
@@ -173,7 +180,7 @@ async def _create_modify_job(
     queue: asyncio.Queue = asyncio.Queue()
     job_step_queues[str(job_id)] = queue
 
-    asyncio.create_task(_bg_plan(job_id))  # noqa: RUF006
+    asyncio.create_task(_bg_plan(job_id, github_token))  # noqa: RUF006
 
     return job_id, job_dict
 
@@ -232,12 +239,21 @@ async def websocket_butler(websocket: WebSocket) -> None:
             action = handler.pop_pending_action()
             if action and action.get("type") == "modify":
                 try:
+                    # Resolve GitHub token for repo-mode jobs
+                    gh_token = None
+                    if action.get("mode") == "repo":
+                        async with AsyncSessionLocal() as udb:
+                            user = await udb.get(User, uuid.UUID(user_id))
+                            if user:
+                                gh_token = user.github_access_token
+
                     job_id, job_dict = await _create_modify_job(
                         user_id=user_id,
                         instruction=action.get("instruction", ""),
                         mode=action.get("mode", "local"),
                         provider=butler_provider,
                         model=butler_model,
+                        github_token=gh_token,
                     )
                     await send({"type": "modify_started", "job": job_dict})
                     task = asyncio.create_task(_watch_job(websocket, job_id))

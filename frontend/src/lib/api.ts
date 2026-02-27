@@ -169,6 +169,8 @@ export interface ModifyJob {
   plan: ModifyPlan | null;
   error: string | null;
   commit_sha: string | null;
+  pr_url: string | null;
+  pr_number: number | null;
   created_at: string;
   completed_at: string | null;
 }
@@ -207,6 +209,9 @@ export const confirmModifyJob = (jobId: string): Promise<ModifyJob> =>
 
 export const cancelModifyJob = (jobId: string): Promise<ModifyJob> =>
   request(`/self/modify/${jobId}/cancel`, { method: 'POST' });
+
+export const mergeModifyJob = (jobId: string): Promise<ModifyJob> =>
+  request(`/self/modify/${jobId}/merge`, { method: 'POST' });
 
 // ─── Skill Store ─────────────────────────────────────────────────────────────
 
@@ -278,6 +283,7 @@ export interface ButlerJob {
   error: string | null;
   commit_sha: string | null;
   pr_url: string | null;
+  pr_number: number | null;
   created_at: string;
   completed_at: string | null;
 }

@@ -36,6 +36,7 @@ class JobStatusResponse(BaseModel):
     error: str | None = None
     commit_sha: str | None = None
     pr_url: str | None = None
+    pr_number: int | None = None
     created_at: datetime
     completed_at: datetime | None = None
 

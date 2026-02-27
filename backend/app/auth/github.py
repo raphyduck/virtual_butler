@@ -76,8 +76,8 @@ async def create_github_pr(
     base: str,
     title: str,
     body: str,
-) -> str:
-    """Create a pull request and return its HTML URL."""
+) -> tuple[str, int]:
+    """Create a pull request and return (html_url, pr_number)."""
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls",
@@ -90,7 +90,31 @@ async def create_github_pr(
             timeout=15,
         )
         resp.raise_for_status()
-        return str(resp.json()["html_url"])
+        data = resp.json()
+        return str(data["html_url"]), int(data["number"])
+
+
+async def merge_github_pr(
+    token: str,
+    owner: str,
+    repo: str,
+    pr_number: int,
+    merge_method: str = "squash",
+) -> str:
+    """Merge a pull request and return the merge commit SHA."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.put(
+            f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pr_number}/merge",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            json={"merge_method": merge_method},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return str(resp.json().get("sha", ""))
 
 
 async def check_repo_ownership(token: str, owner: str, repo: str) -> bool:

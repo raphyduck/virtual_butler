@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { type ButlerJob, cancelModifyJob, confirmModifyJob } from '@/lib/api';
+import { type ButlerJob, cancelModifyJob, confirmModifyJob, mergeModifyJob } from '@/lib/api';
 import { type AgentStep, ButlerWebSocket, type ButlerWsEvent } from '@/lib/ws';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -44,31 +44,39 @@ function uid() {
 const TERMINAL = new Set(['done', 'failed', 'cancelled']);
 
 const STATUS_LABELS: Record<string, string> = {
-  pending:    'Queued…',
-  planning:   'Agent is exploring the codebase…',
-  planned:    'Plan ready — review below',
-  confirmed:  'Preparing to apply…',
-  applying:   'Writing files…',
-  committing: 'Committing…',
-  pushing:    'Pushing to GitHub…',
-  restarting: 'Restarting the application…',
-  done:       'Changes applied successfully',
-  failed:     'Failed',
-  cancelled:  'Cancelled',
+  pending:         'Queued…',
+  planning:        'Agent is exploring the codebase…',
+  planned:         'Plan ready — review below',
+  confirmed:       'Preparing to apply…',
+  applying:        'Writing files…',
+  committing:      'Committing…',
+  pushing:         'Pushing to GitHub…',
+  awaiting_merge:  'PR created — review and merge below',
+  merging:         'Merging pull request…',
+  building:        'Building Docker images…',
+  deploying:       'Deploying new version…',
+  restarting:      'Restarting the application…',
+  done:            'Changes applied successfully',
+  failed:          'Failed',
+  cancelled:       'Cancelled',
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  pending:    'bg-gray-100 text-gray-600',
-  planning:   'bg-green-100 text-green-700',
-  planned:    'bg-yellow-100 text-yellow-800',
-  confirmed:  'bg-green-100 text-green-700',
-  applying:   'bg-green-100 text-green-700',
-  committing: 'bg-green-100 text-green-700',
-  pushing:    'bg-green-100 text-green-700',
-  restarting: 'bg-orange-100 text-orange-700',
-  done:       'bg-green-100 text-green-800',
-  failed:     'bg-red-100 text-red-700',
-  cancelled:  'bg-gray-100 text-gray-500',
+  pending:         'bg-gray-100 text-gray-600',
+  planning:        'bg-green-100 text-green-700',
+  planned:         'bg-yellow-100 text-yellow-800',
+  confirmed:       'bg-green-100 text-green-700',
+  applying:        'bg-green-100 text-green-700',
+  committing:      'bg-green-100 text-green-700',
+  pushing:         'bg-green-100 text-green-700',
+  awaiting_merge:  'bg-blue-100 text-blue-800',
+  merging:         'bg-blue-100 text-blue-700',
+  building:        'bg-orange-100 text-orange-700',
+  deploying:       'bg-orange-100 text-orange-700',
+  restarting:      'bg-orange-100 text-orange-700',
+  done:            'bg-green-100 text-green-800',
+  failed:          'bg-red-100 text-red-700',
+  cancelled:       'bg-gray-100 text-gray-500',
 };
 
 // Maps tool name to a short prefix shown in the step log
@@ -133,6 +141,19 @@ function JobCard({
       onUpdate(updated as unknown as ButlerJob);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed to cancel');
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function merge() {
+    setWorking(true);
+    setErr(null);
+    try {
+      const updated = await mergeModifyJob(job.id);
+      onUpdate(updated as unknown as ButlerJob);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Failed to merge');
     } finally {
       setWorking(false);
     }
@@ -234,10 +255,43 @@ function JobCard({
         </div>
       )}
 
+      {/* ── Awaiting merge (repo mode) ── */}
+      {job.status === 'awaiting_merge' && (
+        <div className="mt-2">
+          {job.pr_url && (
+            <a
+              href={job.pr_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mb-2 block font-medium text-blue-600 hover:underline"
+            >
+              View Pull Request #{job.pr_number}
+            </a>
+          )}
+          {err && <p className="mb-1 text-red-600">{err}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={merge}
+              disabled={working}
+              className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {working ? 'Working…' : 'Merge & Deploy'}
+            </button>
+            <button
+              onClick={cancel}
+              disabled={working}
+              className="rounded border border-gray-300 px-3 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {job.status === 'done' && (
         <div className="mt-1 space-y-1">
           <p className="text-green-700">
-            ✓ Done{job.commit_sha ? ` · sha ${job.commit_sha.slice(0, 7)}` : ''}
+            Done{job.commit_sha ? ` · sha ${job.commit_sha.slice(0, 7)}` : ''}
           </p>
           {job.pr_url && (
             <a
@@ -246,7 +300,7 @@ function JobCard({
               rel="noopener noreferrer"
               className="block font-medium text-blue-600 hover:underline"
             >
-              → Open Pull Request on GitHub
+              Pull Request on GitHub
             </a>
           )}
         </div>
