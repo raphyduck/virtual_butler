@@ -10,8 +10,8 @@
  * • Users confirm / cancel jobs from within the chat
  */
 
-import { useEffect, useRef, useState } from 'react';
-import { type ButlerJob, cancelModifyJob, confirmModifyJob } from '@/lib/api';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { type ButlerJob, cancelModifyJob, confirmModifyJob, listConversations, getConversationMessages } from '@/lib/api';
 import { type AgentStep, ButlerWebSocket, type ButlerWsEvent } from '@/lib/ws';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -317,6 +317,32 @@ export default function ButlerChat() {
   const wsRef = useRef<ButlerWebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const historyLoaded = useRef(false);
+
+  // ── Load persisted conversation history ─────────────────────────────────
+
+  useEffect(() => {
+    if (historyLoaded.current) return;
+    historyLoaded.current = true;
+
+    (async () => {
+      try {
+        const convs = await listConversations();
+        if (convs.length === 0) return;
+        const msgs = await getConversationMessages(convs[0].id);
+        if (msgs.length === 0) return;
+        const restored: ChatMessage[] = msgs.map((m) => ({
+          id: m.id,
+          kind: 'text' as const,
+          role: m.role === 'user' ? 'user' as const : 'butler' as const,
+          content: m.content,
+        }));
+        setMessages(restored);
+      } catch {
+        // Silently fail — no history to load
+      }
+    })();
+  }, []);
 
   // ── WebSocket lifecycle ──────────────────────────────────────────────────
 
@@ -481,7 +507,7 @@ export default function ButlerChat() {
                 <span className="text-3xl">🤵</span>
                 <p className="text-sm font-medium text-gray-600">Hello! I&apos;m your Personal Assistant.</p>
                 <p className="text-xs">
-                  Ask me about usage stats, abilities, settings — or ask me to change something
+                  Ask about skills, updates, settings — or ask me to change something
                   about the platform and I&apos;ll implement it for you.
                 </p>
               </div>

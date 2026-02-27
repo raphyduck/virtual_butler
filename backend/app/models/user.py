@@ -30,3 +30,6 @@ class User(Base):
     self_modify_jobs: Mapped[list["SelfModifyJob"]] = relationship(  # noqa: F821
         "SelfModifyJob", back_populates="user", cascade="all, delete-orphan"
     )
+    conversations: Mapped[list["Conversation"]] = relationship(  # noqa: F821
+        "Conversation", back_populates="user", cascade="all, delete-orphan"
+    )

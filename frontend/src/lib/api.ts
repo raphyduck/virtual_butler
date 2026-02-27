@@ -235,3 +235,106 @@ export interface ButlerJob {
   created_at: string;
   completed_at: string | null;
 }
+
+// ─── Butler conversations ─────────────────────────────────────────────────────
+
+export interface ConversationOut {
+  id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ButlerMessageOut {
+  id: string;
+  role: string;
+  content: string;
+  created_at: string;
+}
+
+export const listConversations = (): Promise<ConversationOut[]> =>
+  request('/conversations');
+
+export const createConversation = (): Promise<ConversationOut> =>
+  request('/conversations', { method: 'POST' });
+
+export const deleteConversation = (id: string): Promise<void> =>
+  request(`/conversations/${id}`, { method: 'DELETE' });
+
+export const getConversationMessages = (id: string): Promise<ButlerMessageOut[]> =>
+  request(`/conversations/${id}/messages`);
+
+// ─── Update (Docker-based) ──────────────────────────────────────────────────
+
+export interface UpdateStatus {
+  current_version: string;
+  previous_version: string | null;
+  build_date: string | null;
+  available: boolean;
+}
+
+export interface UpdateApplyResponse {
+  status: string;
+  previous_version: string;
+  new_version: string;
+  message: string;
+}
+
+export interface UpdateRollbackResponse {
+  status: string;
+  rolled_back_from: string;
+  rolled_back_to: string;
+  message: string;
+}
+
+export const getUpdateStatus = (): Promise<UpdateStatus> =>
+  request('/update/status');
+
+export const applyUpdate = (targetVersion: string): Promise<UpdateApplyResponse> =>
+  request('/update/apply', {
+    method: 'POST',
+    body: JSON.stringify({ target_version: targetVersion }),
+  });
+
+export const rollbackUpdate = (): Promise<UpdateRollbackResponse> =>
+  request('/update/rollback', { method: 'POST' });
+
+// ─── Skills ─────────────────────────────────────────────────────────────────
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string | null;
+  repo_url: string;
+  version: string;
+  enabled: boolean;
+  requires_rebuild: boolean;
+  requires_secrets: string[];
+  requires_packages: string[];
+  requires_system_packages: string[];
+  installed_at: string;
+  updated_at: string;
+}
+
+export interface SkillInstallResponse {
+  skill: Skill;
+  warnings: string[];
+}
+
+export const listSkills = (): Promise<Skill[]> =>
+  request('/skills');
+
+export const installSkill = (repoUrl: string, version = 'latest'): Promise<SkillInstallResponse> =>
+  request('/skills/install', {
+    method: 'POST',
+    body: JSON.stringify({ repo_url: repoUrl, version }),
+  });
+
+export const enableSkill = (id: string): Promise<Skill> =>
+  request(`/skills/${id}/enable`, { method: 'POST' });
+
+export const disableSkill = (id: string): Promise<Skill> =>
+  request(`/skills/${id}/disable`, { method: 'POST' });
+
+export const uninstallSkill = (id: string): Promise<void> =>
+  request(`/skills/${id}`, { method: 'DELETE' });
