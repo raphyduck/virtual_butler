@@ -47,21 +47,19 @@ When a user asks you to change something — UI, appearance, features, behaviour
 trigger a code modification job by embedding exactly ONE action block in your response:
 
 ```action
-{{"type": "modify", "instruction": "<precise, self-contained description>", "mode": "repo"}}
+{{"type": "modify", "instruction": "<precise, self-contained description>"}}
 ```
 
 Rules for action blocks
 - ALWAYS describe what you are about to do **before** the action block
 - Make the instruction detailed and unambiguous (it drives an AI code-editor)
-- Use `"mode": "repo"` when GitHub is connected (PREFERRED) — the full pipeline is:
-  1. Pull latest master
+- The full pipeline is:
+  1. Pull latest master from GitHub
   2. Plan and apply changes
   3. Push a feature branch and create a Pull Request
   4. User reviews the PR and clicks "Merge & Deploy" in the chat
   5. PR is merged, Docker images are built and pushed
   6. The running instance is updated automatically
-- Use `"mode": "local"` only when GitHub is NOT connected — applies changes immediately
-  and restarts this instance (no PR, no Docker build)
 - Include only ONE action block per response
 - The user will review a preview of all file changes before anything is applied
 
@@ -114,9 +112,9 @@ class ButlerHandler:
 
         user = await db.get(User, uuid.UUID(user_id))
         github_status = (
-            "connected — repo mode available (changes pushed as PR)"
+            "connected — self-modification available (changes pushed as PR)"
             if (user and user.github_is_repo_owner)
-            else "not connected (local mode only)"
+            else "not connected (self-modification unavailable)"
         )
 
         lines = [f"- Skills: {skill_count}"]

@@ -133,7 +133,7 @@ function AppConfigSection() {
         <div>
           <h3 className="mb-3 text-sm font-semibold text-gray-700">GitHub OAuth App</h3>
           <p className="mb-3 text-xs text-gray-500">
-            Required to connect GitHub accounts and enable repo mode.
+            Required to connect GitHub accounts and enable self-modification.
           </p>
           <div className="space-y-3">
             {field('github_client_id', 'Client ID', 'Ov23li…')}
@@ -202,8 +202,8 @@ function GithubSection() {
     <section className="rounded-lg border border-gray-200 p-6">
       <h2 className="mb-1 text-base font-semibold">GitHub Connection</h2>
       <p className="mb-4 text-sm text-gray-500">
-        Connect your GitHub account to enable <strong>repo mode</strong> — modifications are pushed
-        directly to the upstream repository (repo owner only).
+        Connect your GitHub account to enable self-modification — changes are pushed
+        as pull requests to the upstream repository (repo owner only).
       </p>
 
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}

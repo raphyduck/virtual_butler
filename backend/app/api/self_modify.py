@@ -9,12 +9,9 @@ repo ownership.  The /modify endpoints drive the full pipeline:
   POST   /self/modify/{id}/merge     → merge PR → build Docker images → deploy
   POST   /self/modify/{id}/cancel    → abort a pending/planning/planned/awaiting_merge job
 
-Repo-mode state machine:
+State machine:
   pending → planning → planned → confirmed → applying → committing → pushing
   → awaiting_merge → merging → building → deploying → done
-
-Local-mode state machine:
-  pending → planning → planned → confirmed → applying → committing → restarting → done
 """
 
 import asyncio
@@ -33,7 +30,6 @@ from app.auth.github import (
     check_repo_ownership,
     create_github_pr,
     exchange_code_for_token,
-    get_default_branch,
     get_github_user,
     get_oauth_url,
     merge_github_pr,
@@ -52,6 +48,9 @@ from app.schemas.self_modify import (
     ModifyRequest,
     PlanOut,
 )
+
+# Auto-update always targets the repo's default branch.
+_DEFAULT_BRANCH = "master"
 
 # ── Per-job step queues for real-time WebSocket streaming ─────────────────────
 # Keyed by job ID (str). Created by butler_ws before launching _bg_plan.
@@ -98,8 +97,8 @@ def _job_to_schema(job: SelfModifyJob) -> JobStatusResponse:
 async def _bg_plan(job_id: uuid.UUID, github_token: str | None = None) -> None:
     """Background task: pending → planning → planned (or failed).
 
-    In repo mode the working tree is first synced to the latest default branch
-    so the agent plans against up-to-date code.
+    The working tree is first synced to the latest default branch so the agent
+    plans against up-to-date code.
 
     Uses AgentModifier (tool-use agentic loop) when an Anthropic API key is
     available; falls back to the single-shot CodeModifier otherwise.
@@ -122,17 +121,16 @@ async def _bg_plan(job_id: uuid.UUID, github_token: str | None = None) -> None:
 
             modifier = CodeModifier()
 
-            # ── Sync to latest default branch (repo mode) ────────────────────
-            if job.mode == "repo" and github_token:
+            # ── Sync to latest default branch ─────────────────────────────────
+            if github_token:
                 repo_owner = await get_effective_setting(db, "github_repo_owner", settings.github_repo_owner)
                 repo_name = await get_effective_setting(db, "github_repo_name", settings.github_repo_name)
-                default_branch = await get_default_branch(github_token, repo_owner, repo_name)
                 await asyncio.to_thread(
                     modifier.git_sync_default_branch,
                     github_token,
                     repo_owner,
                     repo_name,
-                    default_branch,
+                    _DEFAULT_BRANCH,
                 )
 
             # ── Plan the changes ─────────────────────────────────────────────
@@ -182,12 +180,11 @@ async def _bg_plan(job_id: uuid.UUID, github_token: str | None = None) -> None:
                 await queue.put(None)
 
 
-async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: str) -> None:
-    """Background task: confirmed → applying → committing → pushing → awaiting_merge (repo)
-                                                            or → restarting → done (local).
+async def _bg_apply(job_id: uuid.UUID, github_token: str, author_email: str) -> None:
+    """Background task: confirmed → applying → committing → pushing → awaiting_merge.
 
-    In repo mode the job pauses at 'awaiting_merge' so the user can review the PR
-    and trigger merge + deploy from the chat.
+    The job pauses at 'awaiting_merge' so the user can review the PR and trigger
+    merge + deploy from the chat.
     """
     from app.skills.code_modifier import CodeModifier, FileChange, ModificationPlan
 
@@ -219,56 +216,43 @@ async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: s
             job.commit_sha = sha
             await db.commit()
 
-            if job.mode == "repo":
-                if not github_token:
-                    raise ValueError("GitHub token required for repo mode.")
-                job.status = "pushing"
-                await db.commit()
-                repo_owner = await get_effective_setting(db, "github_repo_owner", settings.github_repo_owner)
-                repo_name = await get_effective_setting(db, "github_repo_name", settings.github_repo_name)
+            # Push to a dedicated feature branch
+            job.status = "pushing"
+            await db.commit()
+            repo_owner = await get_effective_setting(db, "github_repo_owner", settings.github_repo_owner)
+            repo_name = await get_effective_setting(db, "github_repo_name", settings.github_repo_name)
 
-                # Push to a dedicated feature branch
-                slug = re.sub(r"[^a-z0-9]+", "-", plan.commit_message.lower())[:40].strip("-")
-                branch_name = f"butler/{slug}-{str(job_id).replace('-', '')[:8]}"
-                await asyncio.to_thread(
-                    modifier.git_push_github,
-                    github_token,
-                    repo_owner,
-                    repo_name,
-                    branch_name,
-                )
+            slug = re.sub(r"[^a-z0-9]+", "-", plan.commit_message.lower())[:40].strip("-")
+            branch_name = f"butler/{slug}-{str(job_id).replace('-', '')[:8]}"
+            await asyncio.to_thread(
+                modifier.git_push_github,
+                github_token,
+                repo_owner,
+                repo_name,
+                branch_name,
+            )
 
-                # Create a PR against the repo's default branch
-                default_branch = await get_default_branch(github_token, repo_owner, repo_name)
-                pr_body = (
-                    f"Changes proposed by the Personal Assistant.\n\n"
-                    f"**Instruction:** {job.instruction}\n\n"
-                    f"**Commit:** `{sha}`"
-                )
-                pr_url, pr_number = await create_github_pr(
-                    token=github_token,
-                    owner=repo_owner,
-                    repo=repo_name,
-                    head=branch_name,
-                    base=default_branch,
-                    title=plan.commit_message,
-                    body=pr_body,
-                )
-                job.pr_url = pr_url
-                job.pr_number = pr_number
+            # Create a PR against the repo's default branch
+            pr_body = (
+                f"Changes proposed by the Personal Assistant.\n\n"
+                f"**Instruction:** {job.instruction}\n\n"
+                f"**Commit:** `{sha}`"
+            )
+            pr_url, pr_number = await create_github_pr(
+                token=github_token,
+                owner=repo_owner,
+                repo=repo_name,
+                head=branch_name,
+                base=_DEFAULT_BRANCH,
+                title=plan.commit_message,
+                body=pr_body,
+            )
+            job.pr_url = pr_url
+            job.pr_number = pr_number
 
-                # Pause — user must approve merge + deploy from the chat
-                job.status = "awaiting_merge"
-                await db.commit()
-
-            else:  # local mode
-                job.status = "restarting"
-                await db.commit()
-                await asyncio.to_thread(modifier.restart_local)
-
-                job.status = "done"
-                job.completed_at = datetime.now(UTC)
-                await db.commit()
+            # Pause — user must approve merge + deploy from the chat
+            job.status = "awaiting_merge"
+            await db.commit()
 
         except Exception as exc:
             job.status = "failed"
@@ -296,7 +280,6 @@ async def _bg_merge_and_deploy(job_id: uuid.UUID, github_token: str) -> None:
         try:
             repo_owner = await get_effective_setting(db, "github_repo_owner", settings.github_repo_owner)
             repo_name = await get_effective_setting(db, "github_repo_name", settings.github_repo_name)
-            default_branch = await get_default_branch(github_token, repo_owner, repo_name)
 
             modifier = CodeModifier()
 
@@ -319,7 +302,7 @@ async def _bg_merge_and_deploy(job_id: uuid.UUID, github_token: str) -> None:
                 github_token,
                 repo_owner,
                 repo_name,
-                default_branch,
+                _DEFAULT_BRANCH,
             )
 
             # ── Build & push Docker images ───────────────────────────────────
@@ -427,17 +410,15 @@ async def start_modify(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> JobStatusResponse:
-    if body.mode == "repo" and not current_user.github_is_repo_owner:
+    if not current_user.github_is_repo_owner:
         raise HTTPException(
             status_code=403,
-            detail="You must authenticate as the repository owner on GitHub to use repo mode.",
+            detail="You must authenticate as the repository owner on GitHub to use self-modification.",
         )
-    if body.mode not in ("repo", "local"):
-        raise HTTPException(status_code=422, detail="mode must be 'repo' or 'local'.")
 
     job = SelfModifyJob(
         user_id=current_user.id,
-        mode=body.mode,
+        mode="repo",
         instruction=body.instruction,
         provider=body.provider,
         model=body.model,
@@ -474,6 +455,8 @@ async def confirm_modify_job(
         raise HTTPException(status_code=404, detail="Job not found.")
     if job.status != "planned":
         raise HTTPException(status_code=409, detail=f"Job status is '{job.status}', expected 'planned'.")
+    if not current_user.github_access_token:
+        raise HTTPException(status_code=403, detail="GitHub token required to confirm modifications.")
 
     job.status = "confirmed"
     await db.commit()

@@ -2,19 +2,15 @@
 
 Flow
 ----
-1. ``plan()``      — reads project files, asks the AI to produce a JSON change-set
-2. ``apply()``     — writes the generated files to disk
-3. ``git_commit()``— stages everything and commits
-4. ``git_push_github()`` (repo mode) — pushes to GitHub with token auth
-5. ``restart_local()``   (local mode) — triggers uvicorn --reload via sentinel touch,
-                                        then SIGTERM after 3 s as a fallback
+1. ``plan()``            — reads project files, asks the AI to produce a JSON change-set
+2. ``apply()``           — writes the generated files to disk
+3. ``git_commit()``      — stages everything and commits
+4. ``git_push_github()`` — pushes to GitHub with token auth
 """
 
 import json
 import os
-import signal
 import subprocess
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -274,26 +270,3 @@ class CodeModifier:
             capture_output=True,
             text=True,
         )
-
-    # ── Restart ───────────────────────────────────────────────────────────────
-
-    def restart_local(self) -> None:
-        """Trigger uvicorn --reload by touching a sentinel file, then SIGTERM after 3 s.
-
-        In development (docker-compose.override.yml), uvicorn runs with --reload and
-        will pick up the touch immediately.  In production the SIGTERM causes Docker
-        (restart: unless-stopped) to restart the container with the new code.
-        """
-        sentinel = self.repo_root / "backend" / "app" / "__init__.py"
-        try:
-            sentinel.touch()
-        except OSError:
-            pass
-
-        def _deferred_kill() -> None:
-            import time
-
-            time.sleep(3)
-            os.kill(os.getpid(), signal.SIGTERM)
-
-        threading.Thread(target=_deferred_kill, daemon=True).start()

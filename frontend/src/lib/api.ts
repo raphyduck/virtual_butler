@@ -195,11 +195,10 @@ export const disconnectGithub = (): Promise<void> =>
 
 export const startModifyJob = (
   instruction: string,
-  mode: 'repo' | 'local',
   provider = 'anthropic',
   model = 'claude-sonnet-4-6',
 ): Promise<ModifyJob> =>
-  request('/self/modify', { method: 'POST', body: JSON.stringify({ instruction, mode, provider, model }) });
+  request('/self/modify', { method: 'POST', body: JSON.stringify({ instruction, provider, model }) });
 
 export const getModifyJob = (jobId: string): Promise<ModifyJob> =>
   request(`/self/modify/${jobId}`);

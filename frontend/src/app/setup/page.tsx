@@ -216,8 +216,7 @@ export default function SetupPage() {
               <div>
                 <h2 className="mb-3 text-sm font-semibold text-gray-700">GitHub OAuth App</h2>
                 <p className="mb-3 text-xs text-gray-500">
-                  Optional — required to connect GitHub accounts and use{' '}
-                  <strong>repo mode</strong> for self-modification.{' '}
+                  Optional — required to connect GitHub accounts and enable self-modification.{' '}
                   <span className="text-gray-400">
                     Create an app at github.com/settings/developers.
                   </span>

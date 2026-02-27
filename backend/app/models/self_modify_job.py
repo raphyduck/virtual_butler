@@ -18,11 +18,10 @@ class SelfModifyJob(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     # pending → planning → planned → confirmed → applying → committing
-    #   repo:  → pushing → awaiting_merge → merging → building → deploying → done
-    #   local: → restarting → done
-    #   any:   → failed | cancelled
+    # → pushing → awaiting_merge → merging → building → deploying → done
+    # (or → failed | cancelled at any point)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending")
-    mode: Mapped[str] = mapped_column(String(10), nullable=False)  # "repo" | "local"
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="repo")
     instruction: Mapped[str] = mapped_column(Text, nullable=False)
     provider: Mapped[str] = mapped_column(String(50), nullable=False, default="anthropic")
     model: Mapped[str] = mapped_column(String(100), nullable=False, default="claude-sonnet-4-6")
