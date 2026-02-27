@@ -1,12 +1,20 @@
 """Self-modification API.
 
 Two GitHub OAuth endpoints let the user connect their account and verify
-repo ownership.  The /modify endpoints drive a two-step flow:
+repo ownership.  The /modify endpoints drive the full pipeline:
 
   POST   /self/modify                → start planning job (background)
   GET    /self/modify/{id}           → poll status / read plan
-  POST   /self/modify/{id}/confirm   → approve plan → start apply job (background)
-  POST   /self/modify/{id}/cancel    → abort a pending/planning/planned job
+  POST   /self/modify/{id}/confirm   → approve plan → apply + push + create PR
+  POST   /self/modify/{id}/merge     → merge PR → build Docker images → deploy
+  POST   /self/modify/{id}/cancel    → abort a pending/planning/planned/awaiting_merge job
+
+Repo-mode state machine:
+  pending → planning → planned → confirmed → applying → committing → pushing
+  → awaiting_merge → merging → building → deploying → done
+
+Local-mode state machine:
+  pending → planning → planned → confirmed → applying → committing → restarting → done
 """
 
 import asyncio
@@ -28,6 +36,7 @@ from app.auth.github import (
     get_default_branch,
     get_github_user,
     get_oauth_url,
+    merge_github_pr,
 )
 from app.config import settings
 from app.database import AsyncSessionLocal, get_db
@@ -77,6 +86,7 @@ def _job_to_schema(job: SelfModifyJob) -> JobStatusResponse:
         error=job.error,
         commit_sha=job.commit_sha,
         pr_url=job.pr_url,
+        pr_number=job.pr_number,
         created_at=job.created_at,
         completed_at=job.completed_at,
     )
@@ -85,8 +95,11 @@ def _job_to_schema(job: SelfModifyJob) -> JobStatusResponse:
 # ── Background tasks ──────────────────────────────────────────────────────────
 
 
-async def _bg_plan(job_id: uuid.UUID) -> None:
+async def _bg_plan(job_id: uuid.UUID, github_token: str | None = None) -> None:
     """Background task: pending → planning → planned (or failed).
+
+    In repo mode the working tree is first synced to the latest default branch
+    so the agent plans against up-to-date code.
 
     Uses AgentModifier (tool-use agentic loop) when an Anthropic API key is
     available; falls back to the single-shot CodeModifier otherwise.
@@ -107,7 +120,18 @@ async def _bg_plan(job_id: uuid.UUID) -> None:
             job.status = "planning"
             await db.commit()
 
-            # Resolve Anthropic API key for the agentic planner
+            modifier = CodeModifier()
+
+            # ── Sync to latest default branch (repo mode) ────────────────────
+            if job.mode == "repo" and github_token:
+                repo_owner = await get_effective_setting(db, "github_repo_owner", settings.github_repo_owner)
+                repo_name = await get_effective_setting(db, "github_repo_name", settings.github_repo_name)
+                default_branch = await get_default_branch(github_token, repo_owner, repo_name)
+                await asyncio.to_thread(
+                    modifier.git_sync_default_branch, github_token, repo_owner, repo_name, default_branch,
+                )
+
+            # ── Plan the changes ─────────────────────────────────────────────
             anthropic_key = (
                 await get_effective_setting(db, "anthropic_api_key", os.getenv("ANTHROPIC_API_KEY", "")) or None
             )
@@ -127,8 +151,6 @@ async def _bg_plan(job_id: uuid.UUID) -> None:
                     on_step=on_step,
                 )
             else:
-                # Fall back to single-shot planner (no streaming steps)
-                modifier = CodeModifier()
                 plan = await modifier.plan(
                     instruction=job.instruction,
                     provider=job.provider,
@@ -152,13 +174,17 @@ async def _bg_plan(job_id: uuid.UUID) -> None:
             await db.commit()
 
         finally:
-            # Send sentinel so the watch loop knows planning is done
             if queue:
                 await queue.put(None)
 
 
 async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: str) -> None:
-    """Background task: confirmed → applying → committing → pushing|restarting → done (or failed)."""
+    """Background task: confirmed → applying → committing → pushing → awaiting_merge (repo)
+                                                            or → restarting → done (local).
+
+    In repo mode the job pauses at 'awaiting_merge' so the user can review the PR
+    and trigger merge + deploy from the chat.
+    """
     from app.skills.code_modifier import CodeModifier, FileChange, ModificationPlan
 
     async with AsyncSessionLocal() as db:
@@ -167,7 +193,6 @@ async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: s
             return
 
         try:
-            # Re-load plan from DB
             if not job.plan_json:
                 raise ValueError("No plan found for this job.")
             raw = json.loads(job.plan_json)
@@ -190,7 +215,6 @@ async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: s
             job.commit_sha = sha
             await db.commit()
 
-            # Push (repo mode) or restart (local mode)
             if job.mode == "repo":
                 if not github_token:
                     raise ValueError("GitHub token required for repo mode.")
@@ -199,15 +223,11 @@ async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: s
                 repo_owner = await get_effective_setting(db, "github_repo_owner", settings.github_repo_owner)
                 repo_name = await get_effective_setting(db, "github_repo_name", settings.github_repo_name)
 
-                # Push to a dedicated feature branch instead of main
+                # Push to a dedicated feature branch
                 slug = re.sub(r"[^a-z0-9]+", "-", plan.commit_message.lower())[:40].strip("-")
                 branch_name = f"butler/{slug}-{str(job_id).replace('-', '')[:8]}"
                 await asyncio.to_thread(
-                    modifier.git_push_github,
-                    github_token,
-                    repo_owner,
-                    repo_name,
-                    branch_name,
+                    modifier.git_push_github, github_token, repo_owner, repo_name, branch_name,
                 )
 
                 # Create a PR against the repo's default branch
@@ -217,7 +237,7 @@ async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: s
                     f"**Instruction:** {job.instruction}\n\n"
                     f"**Commit:** `{sha}`"
                 )
-                pr_url = await create_github_pr(
+                pr_url, pr_number = await create_github_pr(
                     token=github_token,
                     owner=repo_owner,
                     repo=repo_name,
@@ -227,15 +247,87 @@ async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: s
                     body=pr_body,
                 )
                 job.pr_url = pr_url
+                job.pr_number = pr_number
+
+                # Pause — user must approve merge + deploy from the chat
+                job.status = "awaiting_merge"
                 await db.commit()
-            else:  # local
+
+            else:  # local mode
                 job.status = "restarting"
                 await db.commit()
                 await asyncio.to_thread(modifier.restart_local)
 
+                job.status = "done"
+                job.completed_at = datetime.now(UTC)
+                await db.commit()
+
+        except Exception as exc:
+            job.status = "failed"
+            job.error = str(exc)
+            job.completed_at = datetime.now(UTC)
+            await db.commit()
+
+
+async def _bg_merge_and_deploy(job_id: uuid.UUID, github_token: str) -> None:
+    """Background task: awaiting_merge → merging → building → deploying → done.
+
+    1. Merge the PR via GitHub API
+    2. Pull the merged default branch
+    3. Build and push Docker images to GHCR
+    4. Mark as done
+    5. Restart containers via docker compose (may kill this process)
+    """
+    from app.skills.code_modifier import CodeModifier
+
+    async with AsyncSessionLocal() as db:
+        job = await db.get(SelfModifyJob, job_id)
+        if job is None:
+            return
+
+        try:
+            repo_owner = await get_effective_setting(db, "github_repo_owner", settings.github_repo_owner)
+            repo_name = await get_effective_setting(db, "github_repo_name", settings.github_repo_name)
+            default_branch = await get_default_branch(github_token, repo_owner, repo_name)
+
+            modifier = CodeModifier()
+
+            # ── Merge the PR ─────────────────────────────────────────────────
+            job.status = "merging"
+            await db.commit()
+            merge_sha = await merge_github_pr(
+                token=github_token,
+                owner=repo_owner,
+                repo=repo_name,
+                pr_number=job.pr_number,
+            )
+            if merge_sha:
+                job.commit_sha = merge_sha
+                await db.commit()
+
+            # ── Pull merged default branch ───────────────────────────────────
+            await asyncio.to_thread(
+                modifier.git_pull_default_branch, github_token, repo_owner, repo_name, default_branch,
+            )
+
+            # ── Build & push Docker images ───────────────────────────────────
+            job.status = "building"
+            await db.commit()
+            version = merge_sha[:12] if merge_sha else "latest"
+            await asyncio.to_thread(
+                modifier.docker_build_and_push, github_token, repo_owner, repo_name, version,
+            )
+
+            # ── Deploy (mark done FIRST — container restart may kill us) ─────
+            job.status = "deploying"
+            await db.commit()
+
             job.status = "done"
             job.completed_at = datetime.now(UTC)
             await db.commit()
+
+            # This may restart the backend container — fire and forget
+            await asyncio.to_thread(modifier.docker_deploy, version)
 
         except Exception as exc:
             job.status = "failed"
@@ -338,7 +430,7 @@ async def start_modify(
     await db.commit()
     await db.refresh(job)
 
-    background_tasks.add_task(_bg_plan, job.id)
+    background_tasks.add_task(_bg_plan, job.id, current_user.github_access_token)
     return _job_to_schema(job)
 
 
@@ -375,6 +467,28 @@ async def confirm_modify_job(
     return _job_to_schema(job)
 
 
+@router.post("/modify/{job_id}/merge", response_model=JobStatusResponse)
+async def merge_modify_job(
+    job_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> JobStatusResponse:
+    """User approves the PR — merge it, build Docker images, and deploy."""
+    job = await db.get(SelfModifyJob, job_id)
+    if job is None or job.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if job.status != "awaiting_merge":
+        raise HTTPException(status_code=409, detail=f"Job status is '{job.status}', expected 'awaiting_merge'.")
+    if not current_user.github_access_token:
+        raise HTTPException(status_code=403, detail="GitHub token required to merge.")
+    if not job.pr_number:
+        raise HTTPException(status_code=409, detail="No PR number recorded for this job.")
+
+    background_tasks.add_task(_bg_merge_and_deploy, job.id, current_user.github_access_token)
+    return _job_to_schema(job)
+
+
 @router.post("/modify/{job_id}/cancel", response_model=JobStatusResponse)
 async def cancel_modify_job(
     job_id: uuid.UUID,
@@ -384,7 +498,7 @@ async def cancel_modify_job(
     job = await db.get(SelfModifyJob, job_id)
     if job is None or job.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Job not found.")
-    if job.status not in ("pending", "planning", "planned"):
+    if job.status not in ("pending", "planning", "planned", "awaiting_merge"):
         raise HTTPException(status_code=409, detail=f"Cannot cancel job in status '{job.status}'.")
 
     job.status = "cancelled"

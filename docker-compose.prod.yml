@@ -45,6 +45,10 @@ services:
       REPO_ROOT:             /repo
       CORS_ORIGINS:          ${CORS_ORIGINS:-http://localhost:3000}
       APP_VERSION:           ${APP_VERSION:-latest}
+    volumes:
+      # Repo mount for self-modification + Docker socket for build-and-deploy
+      - .:/repo
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:

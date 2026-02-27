@@ -191,6 +191,80 @@ class CodeModifier:
             capture_output=True,  # suppress token from console output
         )
 
+    def git_sync_default_branch(self, token: str, owner: str, repo: str, branch: str = "main") -> None:
+        """Fetch and reset to the latest default branch before starting work."""
+        remote_url = f"https://{token}@github.com/{owner}/{repo}.git"
+        subprocess.run(
+            ["git", "fetch", remote_url, branch],
+            cwd=self.repo_root,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(["git", "checkout", branch], cwd=self.repo_root, check=True, capture_output=True)
+        subprocess.run(["git", "reset", "--hard", "FETCH_HEAD"], cwd=self.repo_root, check=True, capture_output=True)
+
+    def git_pull_default_branch(self, token: str, owner: str, repo: str, branch: str = "main") -> None:
+        """Pull the latest default branch after a PR has been merged."""
+        remote_url = f"https://{token}@github.com/{owner}/{repo}.git"
+        subprocess.run(["git", "checkout", branch], cwd=self.repo_root, check=True, capture_output=True)
+        subprocess.run(["git", "pull", remote_url, branch], cwd=self.repo_root, check=True, capture_output=True)
+
+    # ── Docker build & deploy ─────────────────────────────────────────────────
+
+    def docker_build_and_push(self, token: str, owner: str, repo: str, version: str) -> None:
+        """Build backend + frontend Docker images and push them to GHCR."""
+        registry = f"ghcr.io/{owner.lower()}/{repo.lower()}"
+
+        # Authenticate to GHCR
+        subprocess.run(
+            ["docker", "login", "ghcr.io", "-u", owner, "--password-stdin"],
+            input=token,
+            cwd=self.repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        for component in ("backend", "frontend"):
+            tag = f"{registry}-{component}:{version}"
+            tag_latest = f"{registry}-{component}:latest"
+            context = str(self.repo_root / component)
+            dockerfile = str(self.repo_root / component / "Dockerfile")
+
+            subprocess.run(
+                ["docker", "build", "-f", dockerfile, "--target", "production",
+                 "-t", tag, "-t", tag_latest, context],
+                check=True, capture_output=True, text=True,
+            )
+            subprocess.run(["docker", "push", tag], check=True, capture_output=True, text=True)
+            subprocess.run(["docker", "push", tag_latest], check=True, capture_output=True, text=True)
+
+    def docker_deploy(self, version: str) -> None:
+        """Pull new images and restart the running containers via docker compose.
+
+        The job should be marked 'done' BEFORE calling this, because the backend
+        container itself will be replaced.
+        """
+        compose_file = self.repo_root / "docker-compose.prod.yml"
+        env = {**os.environ, "APP_VERSION": version}
+
+        compose_args = [
+            "docker", "compose",
+            *(["-f", str(compose_file)] if compose_file.exists() else []),
+        ]
+
+        # Pull new images
+        subprocess.run(
+            [*compose_args, "pull", "backend", "frontend"],
+            cwd=self.repo_root, env=env, check=True, capture_output=True, text=True,
+        )
+
+        # Restart backend + frontend (db/redis stay running)
+        subprocess.run(
+            [*compose_args, "up", "-d", "--no-deps", "backend", "frontend"],
+            cwd=self.repo_root, env=env, check=True, capture_output=True, text=True,
+        )
+
     # ── Restart ───────────────────────────────────────────────────────────────
 
     def restart_local(self) -> None:
