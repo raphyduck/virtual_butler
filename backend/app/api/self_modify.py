@@ -30,6 +30,7 @@ from app.auth.github import (
     check_repo_ownership,
     create_github_pr,
     exchange_code_for_token,
+    get_default_branch,
     get_github_user,
     get_oauth_url,
     merge_github_pr,
@@ -48,9 +49,6 @@ from app.schemas.self_modify import (
     ModifyRequest,
     PlanOut,
 )
-
-# Auto-update always targets the repo's default branch.
-_DEFAULT_BRANCH = "master"
 
 # ── Per-job step queues for real-time WebSocket streaming ─────────────────────
 # Keyed by job ID (str). Created by butler_ws before launching _bg_plan.
@@ -125,12 +123,13 @@ async def _bg_plan(job_id: uuid.UUID, github_token: str | None = None) -> None:
             if github_token:
                 repo_owner = await get_effective_setting(db, "github_repo_owner", settings.github_repo_owner)
                 repo_name = await get_effective_setting(db, "github_repo_name", settings.github_repo_name)
+                default_branch = await get_default_branch(github_token, repo_owner, repo_name)
                 await asyncio.to_thread(
                     modifier.git_sync_default_branch,
                     github_token,
                     repo_owner,
                     repo_name,
-                    _DEFAULT_BRANCH,
+                    default_branch,
                 )
 
             # ── Plan the changes ─────────────────────────────────────────────
@@ -233,6 +232,7 @@ async def _bg_apply(job_id: uuid.UUID, github_token: str, author_email: str) -> 
             )
 
             # Create a PR against the repo's default branch
+            default_branch = await get_default_branch(github_token, repo_owner, repo_name)
             pr_body = (
                 f"Changes proposed by the Personal Assistant.\n\n"
                 f"**Instruction:** {job.instruction}\n\n"
@@ -243,7 +243,7 @@ async def _bg_apply(job_id: uuid.UUID, github_token: str, author_email: str) -> 
                 owner=repo_owner,
                 repo=repo_name,
                 head=branch_name,
-                base=_DEFAULT_BRANCH,
+                base=default_branch,
                 title=plan.commit_message,
                 body=pr_body,
             )
@@ -297,12 +297,13 @@ async def _bg_merge_and_deploy(job_id: uuid.UUID, github_token: str) -> None:
                 await db.commit()
 
             # ── Pull merged default branch ───────────────────────────────────
+            default_branch = await get_default_branch(github_token, repo_owner, repo_name)
             await asyncio.to_thread(
                 modifier.git_pull_default_branch,
                 github_token,
                 repo_owner,
                 repo_name,
-                _DEFAULT_BRANCH,
+                default_branch,
             )
 
             # ── Build & push Docker images ───────────────────────────────────

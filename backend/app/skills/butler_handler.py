@@ -54,7 +54,7 @@ Rules for action blocks
 - ALWAYS describe what you are about to do **before** the action block
 - Make the instruction detailed and unambiguous (it drives an AI code-editor)
 - The full pipeline is:
-  1. Pull latest master from GitHub
+  1. Pull the latest default branch from GitHub
   2. Plan and apply changes
   3. Push a feature branch and create a Pull Request
   4. User reviews the PR and clicks "Merge & Deploy" in the chat
