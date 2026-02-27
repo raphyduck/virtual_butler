@@ -128,7 +128,11 @@ async def _bg_plan(job_id: uuid.UUID, github_token: str | None = None) -> None:
                 repo_name = await get_effective_setting(db, "github_repo_name", settings.github_repo_name)
                 default_branch = await get_default_branch(github_token, repo_owner, repo_name)
                 await asyncio.to_thread(
-                    modifier.git_sync_default_branch, github_token, repo_owner, repo_name, default_branch,
+                    modifier.git_sync_default_branch,
+                    github_token,
+                    repo_owner,
+                    repo_name,
+                    default_branch,
                 )
 
             # ── Plan the changes ─────────────────────────────────────────────
@@ -227,7 +231,11 @@ async def _bg_apply(job_id: uuid.UUID, github_token: str | None, author_email: s
                 slug = re.sub(r"[^a-z0-9]+", "-", plan.commit_message.lower())[:40].strip("-")
                 branch_name = f"butler/{slug}-{str(job_id).replace('-', '')[:8]}"
                 await asyncio.to_thread(
-                    modifier.git_push_github, github_token, repo_owner, repo_name, branch_name,
+                    modifier.git_push_github,
+                    github_token,
+                    repo_owner,
+                    repo_name,
+                    branch_name,
                 )
 
                 # Create a PR against the repo's default branch
@@ -307,7 +315,11 @@ async def _bg_merge_and_deploy(job_id: uuid.UUID, github_token: str) -> None:
 
             # ── Pull merged default branch ───────────────────────────────────
             await asyncio.to_thread(
-                modifier.git_pull_default_branch, github_token, repo_owner, repo_name, default_branch,
+                modifier.git_pull_default_branch,
+                github_token,
+                repo_owner,
+                repo_name,
+                default_branch,
             )
 
             # ── Build & push Docker images ───────────────────────────────────
@@ -315,7 +327,11 @@ async def _bg_merge_and_deploy(job_id: uuid.UUID, github_token: str) -> None:
             await db.commit()
             version = merge_sha[:12] if merge_sha else "latest"
             await asyncio.to_thread(
-                modifier.docker_build_and_push, github_token, repo_owner, repo_name, version,
+                modifier.docker_build_and_push,
+                github_token,
+                repo_owner,
+                repo_name,
+                version,
             )
 
             # ── Deploy (mark done FIRST — container restart may kill us) ─────

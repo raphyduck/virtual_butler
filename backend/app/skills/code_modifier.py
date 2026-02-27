@@ -232,9 +232,10 @@ class CodeModifier:
             dockerfile = str(self.repo_root / component / "Dockerfile")
 
             subprocess.run(
-                ["docker", "build", "-f", dockerfile, "--target", "production",
-                 "-t", tag, "-t", tag_latest, context],
-                check=True, capture_output=True, text=True,
+                ["docker", "build", "-f", dockerfile, "--target", "production", "-t", tag, "-t", tag_latest, context],
+                check=True,
+                capture_output=True,
+                text=True,
             )
             subprocess.run(["docker", "push", tag], check=True, capture_output=True, text=True)
             subprocess.run(["docker", "push", tag_latest], check=True, capture_output=True, text=True)
@@ -249,20 +250,29 @@ class CodeModifier:
         env = {**os.environ, "APP_VERSION": version}
 
         compose_args = [
-            "docker", "compose",
+            "docker",
+            "compose",
             *(["-f", str(compose_file)] if compose_file.exists() else []),
         ]
 
         # Pull new images
         subprocess.run(
             [*compose_args, "pull", "backend", "frontend"],
-            cwd=self.repo_root, env=env, check=True, capture_output=True, text=True,
+            cwd=self.repo_root,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
         )
 
         # Restart backend + frontend (db/redis stay running)
         subprocess.run(
             [*compose_args, "up", "-d", "--no-deps", "backend", "frontend"],
-            cwd=self.repo_root, env=env, check=True, capture_output=True, text=True,
+            cwd=self.repo_root,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
         )
 
     # ── Restart ───────────────────────────────────────────────────────────────
