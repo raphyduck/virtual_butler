@@ -8,7 +8,8 @@ import { useAuthStore } from '@/store/auth';
 import clsx from 'clsx';
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/dashboard', label: 'Chat' },
+  { href: '/skills', label: 'Skills' },
   { href: '/skill-store', label: 'Skill Store' },
   { href: '/settings', label: 'Settings' },
 ];
@@ -63,8 +64,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
-      {/* Butler floating chat — available across all authenticated pages */}
-      <ButlerChat />
+      {/* Butler floating chat — available on non-chat pages */}
+      {pathname !== '/dashboard' && <ButlerChat />}
     </div>
   );
 }
