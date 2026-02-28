@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { type ButlerJob, cancelModifyJob, confirmModifyJob, mergeModifyJob } from '@/lib/api';
+import { type ButlerJob, cancelModifyJob, confirmModifyJob, getButlerHistory, mergeModifyJob } from '@/lib/api';
 import { type AgentStep, ButlerWebSocket, type ButlerWsEvent } from '@/lib/ws';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -370,6 +370,25 @@ export default function ButlerChat() {
   const wsRef = useRef<ButlerWebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // ── Load chat history on mount ──────────────────────────────────────────
+
+  useEffect(() => {
+    getButlerHistory()
+      .then((conv) => {
+        if (conv && conv.messages.length > 0) {
+          setMessages(
+            conv.messages.map((m) => ({
+              id: m.id,
+              kind: 'text' as const,
+              role: m.role === 'user' ? ('user' as const) : ('butler' as const),
+              content: m.content,
+            })),
+          );
+        }
+      })
+      .catch(() => {/* start fresh if fetch fails */});
+  }, []);
 
   // ── WebSocket lifecycle ──────────────────────────────────────────────────
 
