@@ -6,6 +6,9 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   exit 0
 fi
 
+# Fix git ownership check in containerized environments
+git config --global --add safe.directory "$CLAUDE_PROJECT_DIR"
+
 echo "==> Installing backend Python dependencies..."
 cd "$CLAUDE_PROJECT_DIR/backend"
 uv sync --extra dev --python 3.12
