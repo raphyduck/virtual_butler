@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TypedDict
 
 
@@ -31,7 +31,7 @@ class RingBufferHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         entry: LogEntry = {
-            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "ts": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": self.format(record),

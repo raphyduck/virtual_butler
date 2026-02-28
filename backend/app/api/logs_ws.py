@@ -6,7 +6,6 @@ Server → Client (JSON):
     {"ts": "...", "level": "INFO", "logger": "app.x", "message": "..."}
 """
 
-import asyncio
 import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
