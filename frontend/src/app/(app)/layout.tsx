@@ -11,6 +11,7 @@ const navItems = [
   { href: '/dashboard', label: 'Chat' },
   { href: '/skills', label: 'Skills' },
   { href: '/skill-store', label: 'Skill Store' },
+  { href: '/logs', label: 'Logs' },
   { href: '/settings', label: 'Settings' },
 ];
 

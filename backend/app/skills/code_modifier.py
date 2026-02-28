@@ -9,7 +9,9 @@ Flow
 """
 
 import json
+import logging
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +20,10 @@ from typing import Literal
 from app.config import settings
 from app.providers.base import ChatMessage
 from app.providers.factory import get_provider
+
+logger = logging.getLogger(__name__)
+
+_TOKEN_RE = re.compile(r"(https?://)([^@]+)(@github\.com)")
 
 # ── Data model ────────────────────────────────────────────────────────────────
 
@@ -162,48 +168,59 @@ class CodeModifier:
 
     # ── Git ───────────────────────────────────────────────────────────────────
 
-    def git_commit(self, message: str, author_email: str = "butler@virtual-butler.local") -> str:
-        """Stage all changes, commit, and return the new HEAD SHA."""
-        subprocess.run(["git", "config", "user.email", author_email], cwd=self.repo_root, check=True)
-        subprocess.run(["git", "config", "user.name", "Virtual Butler"], cwd=self.repo_root, check=True)
-        subprocess.run(["git", "add", "-A"], cwd=self.repo_root, check=True)
-        subprocess.run(["git", "commit", "-m", message], cwd=self.repo_root, check=True)
+    @staticmethod
+    def _scrub_token(text: str) -> str:
+        """Remove embedded credentials from git output so tokens never leak into logs."""
+        return _TOKEN_RE.sub(r"\1****\3", text)
+
+    def _run_git(self, cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+        """Run a git command with proper error handling.
+
+        * stdout/stderr are always captured (keeps tokens out of console).
+        * On failure the *scrubbed* stderr is logged and re-raised inside a
+          RuntimeError so callers get an actionable message instead of just
+          ``exit status 128``.
+        """
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            cmd,
             cwd=self.repo_root,
             capture_output=True,
             text=True,
-            check=True,
         )
+        if check and result.returncode != 0:
+            safe_cmd = self._scrub_token(" ".join(cmd))
+            safe_stderr = self._scrub_token(result.stderr.strip())
+            safe_stdout = self._scrub_token(result.stdout.strip())
+            logger.error("git command failed: %s\nstderr: %s\nstdout: %s", safe_cmd, safe_stderr, safe_stdout)
+            raise RuntimeError(f"git command failed (exit {result.returncode}): {safe_cmd}\n{safe_stderr}")
+        return result
+
+    def git_commit(self, message: str, author_email: str = "butler@virtual-butler.local") -> str:
+        """Stage all changes, commit, and return the new HEAD SHA."""
+        self._run_git(["git", "config", "user.email", author_email])
+        self._run_git(["git", "config", "user.name", "Virtual Butler"])
+        self._run_git(["git", "add", "-A"])
+        self._run_git(["git", "commit", "-m", message])
+        result = self._run_git(["git", "rev-parse", "HEAD"])
         return result.stdout.strip()
 
     def git_push_github(self, token: str, owner: str, repo: str, branch: str = "main") -> None:
         """Push HEAD to GitHub using token auth (credentials never stored in history)."""
         remote_url = f"https://{token}@github.com/{owner}/{repo}.git"
-        subprocess.run(
-            ["git", "push", remote_url, f"HEAD:{branch}"],
-            cwd=self.repo_root,
-            check=True,
-            capture_output=True,  # suppress token from console output
-        )
+        self._run_git(["git", "push", remote_url, f"HEAD:{branch}"])
 
     def git_sync_default_branch(self, token: str, owner: str, repo: str, branch: str = "main") -> None:
         """Fetch and reset to the latest default branch before starting work."""
         remote_url = f"https://{token}@github.com/{owner}/{repo}.git"
-        subprocess.run(
-            ["git", "fetch", remote_url, branch],
-            cwd=self.repo_root,
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(["git", "checkout", branch], cwd=self.repo_root, check=True, capture_output=True)
-        subprocess.run(["git", "reset", "--hard", "FETCH_HEAD"], cwd=self.repo_root, check=True, capture_output=True)
+        self._run_git(["git", "fetch", remote_url, branch])
+        self._run_git(["git", "checkout", branch])
+        self._run_git(["git", "reset", "--hard", "FETCH_HEAD"])
 
     def git_pull_default_branch(self, token: str, owner: str, repo: str, branch: str = "main") -> None:
         """Pull the latest default branch after a PR has been merged."""
         remote_url = f"https://{token}@github.com/{owner}/{repo}.git"
-        subprocess.run(["git", "checkout", branch], cwd=self.repo_root, check=True, capture_output=True)
-        subprocess.run(["git", "pull", remote_url, branch], cwd=self.repo_root, check=True, capture_output=True)
+        self._run_git(["git", "checkout", branch])
+        self._run_git(["git", "pull", remote_url, branch])
 
     # ── Docker build & deploy ─────────────────────────────────────────────────
 

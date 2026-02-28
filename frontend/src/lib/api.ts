@@ -277,6 +277,26 @@ export interface ButlerConversation {
 export const getButlerHistory = (): Promise<ButlerConversation | null> =>
   request('/butler/conversations/latest');
 
+// ─── Logs ────────────────────────────────────────────────────────────────────
+
+export interface LogEntry {
+  ts: string;
+  level: string;
+  logger: string;
+  message: string;
+}
+
+export const getLogs = (
+  limit = 200,
+  level?: string,
+  loggerName?: string,
+): Promise<LogEntry[]> => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (level) params.set('level', level);
+  if (loggerName) params.set('logger', loggerName);
+  return request(`/logs?${params}`);
+};
+
 // ─── Butler chat ─────────────────────────────────────────────────────────────
 // The butler WebSocket streams these lightweight job snapshots (no file content).
 
