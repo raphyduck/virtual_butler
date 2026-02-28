@@ -4,8 +4,6 @@ GET /butler/conversations          — list conversations for the current user
 GET /butler/conversations/latest   — get messages from the latest conversation
 """
 
-import uuid
-
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -14,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db
-from app.models.conversation import ButlerMessage, Conversation
+from app.models.conversation import Conversation
 from app.models.user import User
 
 router = APIRouter(prefix="/butler", tags=["butler"])
