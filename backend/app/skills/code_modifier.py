@@ -191,9 +191,81 @@ class CodeModifier:
             safe_cmd = self._scrub_token(" ".join(cmd))
             safe_stderr = self._scrub_token(result.stderr.strip())
             safe_stdout = self._scrub_token(result.stdout.strip())
-            logger.error("git command failed: %s\nstderr: %s\nstdout: %s", safe_cmd, safe_stderr, safe_stdout)
-            raise RuntimeError(f"git command failed (exit {result.returncode}): {safe_cmd}\n{safe_stderr}")
+            # Collect diagnostic info for ownership / permission errors
+            diag = self._git_diagnostics()
+            logger.error(
+                "git command failed: %s\nstderr: %s\nstdout: %s\n--- diagnostics ---\n%s",
+                safe_cmd, safe_stderr, safe_stdout, diag,
+            )
+            raise RuntimeError(
+                f"git command failed (exit {result.returncode}): {safe_cmd}\n{safe_stderr}\n--- diagnostics ---\n{diag}"
+            )
         return result
+
+    def _git_diagnostics(self) -> str:
+        """Collect environment info useful for debugging git ownership errors."""
+        import getpass
+        import stat
+
+        lines: list[str] = []
+        # Current process identity
+        lines.append(f"uid={os.getuid()} euid={os.geteuid()} user={getpass.getuser()}")
+        lines.append(f"HOME={os.environ.get('HOME', '(unset)')}")
+        lines.append(f"repo_root={self.repo_root}")
+
+        # Ownership of repo_root and .git
+        for p in [self.repo_root, self.repo_root / ".git"]:
+            try:
+                st = p.stat()
+                lines.append(f"  {p}: owner_uid={st.st_uid} gid={st.st_gid} mode={stat.filemode(st.st_mode)}")
+            except OSError as exc:
+                lines.append(f"  {p}: {exc}")
+
+        # Check if repo_root is a symlink
+        try:
+            if self.repo_root.is_symlink():
+                lines.append(f"  repo_root symlink -> {os.readlink(self.repo_root)}")
+        except OSError:
+            pass
+
+        # safe.directory config values (system + global + local)
+        for scope in ("system", "global", "local"):
+            try:
+                r = subprocess.run(
+                    ["git", "config", f"--{scope}", "--get-all", "safe.directory"],
+                    cwd=self.repo_root,
+                    capture_output=True, text=True,
+                )
+                val = r.stdout.strip() or "(empty)"
+                lines.append(f"  safe.directory [{scope}]: {val}")
+            except Exception as exc:
+                lines.append(f"  safe.directory [{scope}]: error: {exc}")
+
+        # Git config files that exist
+        for cfg in ["/etc/gitconfig", os.path.expanduser("~/.gitconfig"), str(self.repo_root / ".git" / "config")]:
+            exists = Path(cfg).exists()
+            lines.append(f"  config file {cfg}: exists={exists}")
+            if exists:
+                try:
+                    content = Path(cfg).read_text()
+                    # Only show [safe] section
+                    in_safe = False
+                    for line in content.splitlines():
+                        if line.strip().startswith("[safe"):
+                            in_safe = True
+                        elif line.strip().startswith("[") and in_safe:
+                            in_safe = False
+                        if in_safe:
+                            lines.append(f"    {line}")
+                except Exception:
+                    pass
+
+        # GIT_CONFIG* env vars
+        for key, val in sorted(os.environ.items()):
+            if key.startswith("GIT_"):
+                lines.append(f"  env {key}={val}")
+
+        return "\n".join(lines)
 
     def git_commit(self, message: str, author_email: str = "butler@virtual-butler.local") -> str:
         """Stage all changes, commit, and return the new HEAD SHA."""
