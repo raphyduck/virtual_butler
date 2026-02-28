@@ -7,7 +7,8 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
 fi
 
 # Fix git ownership check in containerized environments
-git config --global --add safe.directory "$CLAUDE_PROJECT_DIR"
+# Use wildcard to cover all paths including internal /repo used by git fetch
+git config --global --add safe.directory '*'
 
 echo "==> Installing backend Python dependencies..."
 cd "$CLAUDE_PROJECT_DIR/backend"
