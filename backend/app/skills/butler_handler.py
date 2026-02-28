@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.app_setting import get_effective_setting
 from app.models.conversation import ButlerMessage, Conversation
@@ -153,9 +154,35 @@ class ButlerHandler:
         return action
 
     async def _ensure_conversation(self, db: AsyncSession, user_id: str) -> uuid.UUID:
-        """Create a conversation row on first message, reuse afterwards."""
+        """Resume the latest conversation or create a new one.
+
+        On the first call per connection, queries the DB for the user's most
+        recent conversation and reloads its messages into ``_history`` so the
+        AI sees the full prior context.
+        """
         if self._conversation_id is not None:
             return self._conversation_id
+
+        # Try to resume the latest conversation
+        result = await db.execute(
+            select(Conversation)
+            .where(Conversation.user_id == uuid.UUID(user_id))
+            .options(selectinload(Conversation.butler_messages))
+            .order_by(Conversation.updated_at.desc())
+            .limit(1)
+        )
+        conv = result.scalar_one_or_none()
+
+        if conv is not None:
+            # Reload prior messages into in-memory history for multi-turn context
+            self._history = [
+                ChatMessage(role=m.role, content=m.content)
+                for m in conv.butler_messages
+            ]
+            self._conversation_id = conv.id
+            return conv.id
+
+        # No previous conversation — create a fresh one
         conv = Conversation(user_id=uuid.UUID(user_id))
         db.add(conv)
         await db.flush()

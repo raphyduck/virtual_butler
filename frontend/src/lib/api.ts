@@ -258,6 +258,25 @@ export const getUpdateStatus = (): Promise<UpdateStatus> => request('/update/sta
 export const applyUpdate = (): Promise<UpdateResult> => request('/update/apply', { method: 'POST' });
 export const rollbackUpdate = (): Promise<UpdateResult> => request('/update/rollback', { method: 'POST' });
 
+// ─── Butler chat history ─────────────────────────────────────────────────────
+
+export interface ButlerMessageOut {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+export interface ButlerConversation {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  messages: ButlerMessageOut[];
+}
+
+export const getButlerHistory = (): Promise<ButlerConversation | null> =>
+  request('/butler/conversations/latest');
+
 // ─── Butler chat ─────────────────────────────────────────────────────────────
 // The butler WebSocket streams these lightweight job snapshots (no file content).
 
