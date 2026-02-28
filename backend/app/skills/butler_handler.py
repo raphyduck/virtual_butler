@@ -175,10 +175,7 @@ class ButlerHandler:
 
         if conv is not None:
             # Reload prior messages into in-memory history for multi-turn context
-            self._history = [
-                ChatMessage(role=m.role, content=m.content)
-                for m in conv.butler_messages
-            ]
+            self._history = [ChatMessage(role=m.role, content=m.content) for m in conv.butler_messages]
             self._conversation_id = conv.id
             return conv.id
 
