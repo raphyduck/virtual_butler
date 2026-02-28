@@ -192,9 +192,7 @@ class CodeModifier:
             safe_stderr = self._scrub_token(result.stderr.strip())
             safe_stdout = self._scrub_token(result.stdout.strip())
             logger.error("git command failed: %s\nstderr: %s\nstdout: %s", safe_cmd, safe_stderr, safe_stdout)
-            raise RuntimeError(
-                f"git command failed (exit {result.returncode}): {safe_cmd}\n{safe_stderr}"
-            )
+            raise RuntimeError(f"git command failed (exit {result.returncode}): {safe_cmd}\n{safe_stderr}")
         return result
 
     def git_commit(self, message: str, author_email: str = "butler@virtual-butler.local") -> str:
