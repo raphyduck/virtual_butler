@@ -220,11 +220,13 @@ async def websocket_butler(websocket: WebSocket) -> None:
                 # Replay stored agent steps so the client can rebuild the log
                 if job.steps_json:
                     for step in json.loads(job.steps_json):
-                        await send({
-                            "type": "modify_step",
-                            "job_id": str(job.id),
-                            "step": step,
-                        })
+                        await send(
+                            {
+                                "type": "modify_step",
+                                "job_id": str(job.id),
+                                "step": step,
+                            }
+                        )
                 # Start a watcher for jobs that are actively progressing
                 # (skip awaiting_merge — user must click Merge first)
                 if job.status not in _PAUSE:
