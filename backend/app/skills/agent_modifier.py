@@ -11,6 +11,8 @@ fully compatible with the existing _bg_apply / CodeModifier.apply() pipeline.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import subprocess
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -19,7 +21,15 @@ from pathlib import Path
 import anthropic
 
 from app.config import settings
+from app.providers.rate_limiter import (
+    BASE_BACKOFF,
+    MAX_BACKOFF,
+    MAX_RETRIES,
+    get_rate_limiter,
+)
 from app.skills.code_modifier import FileChange, ModificationPlan
+
+logger = logging.getLogger(__name__)
 
 # ── Step type ─────────────────────────────────────────────────────────────────
 
@@ -75,7 +85,12 @@ _TOOLS: list[dict] = [
         "description": "Read the full contents of a file relative to the repository root.",
         "input_schema": {
             "type": "object",
-            "properties": {"path": {"type": "string", "description": "Path relative to the repo root"}},
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path relative to the repo root",
+                }
+            },
             "required": ["path"],
         },
     },
@@ -85,7 +100,10 @@ _TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "pattern": {"type": "string", "description": "Basic regex / literal pattern"},
+                "pattern": {
+                    "type": "string",
+                    "description": "Basic regex / literal pattern",
+                },
                 "path": {
                     "type": "string",
                     "description": "Optional subdirectory or file to search in.",
@@ -104,12 +122,18 @@ _TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Path relative to repo root"},
+                "path": {
+                    "type": "string",
+                    "description": "Path relative to repo root",
+                },
                 "old_string": {
                     "type": "string",
                     "description": "Exact string to replace (must occur exactly once in the file)",
                 },
-                "new_string": {"type": "string", "description": "Replacement string"},
+                "new_string": {
+                    "type": "string",
+                    "description": "Replacement string",
+                },
             },
             "required": ["path", "old_string", "new_string"],
         },
@@ -120,7 +144,10 @@ _TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Path relative to repo root"},
+                "path": {
+                    "type": "string",
+                    "description": "Path relative to repo root",
+                },
                 "action": {
                     "type": "string",
                     "enum": ["create", "modify", "delete"],
@@ -153,6 +180,131 @@ _MAX_ITER = 30
 _READ_LIMIT = 25_000
 _SEARCH_LIMIT = 5_000
 _LIST_LIMIT = 600  # max lines in file listing
+
+# ── History compression settings ──────────────────────────────────────────────
+# When estimated input tokens exceed this, compress older messages to free budget.
+_COMPRESS_THRESHOLD = 12_000  # tokens (~53% of 22.5k effective budget)
+_KEEP_RECENT_MESSAGES = 4  # keep the last N messages intact (= 2 iterations)
+_SUMMARY_CHAR_LIMIT = 300  # max chars to keep from truncated tool results
+
+
+# ── Message compression ──────────────────────────────────────────────────────
+
+
+def _compress_tool_result(content: str) -> str:
+    """Compress a large tool_result string to a short summary."""
+    lines = content.splitlines()
+    num_lines = len(lines)
+    total_chars = len(content)
+
+    # Keep the first few lines (often imports / class defs) as a hint
+    preview_lines = lines[:8]
+    preview = "\n".join(preview_lines)
+    if len(preview) > _SUMMARY_CHAR_LIMIT:
+        preview = preview[:_SUMMARY_CHAR_LIMIT]
+
+    return f"[Summarized — {total_chars} chars, {num_lines} lines]\n{preview}\n…"
+
+
+def _compress_messages(messages: list[dict]) -> tuple[list[dict], int]:
+    """Compress older messages to reduce token usage.
+
+    Strategy:
+    - Keep messages[0] (initial instruction + file tree) intact
+    - Keep the last ``_KEEP_RECENT_MESSAGES`` messages intact (recent context)
+    - For older tool_result content (user messages): replace large strings with
+      a short summary preserving the first few lines
+    - For older assistant messages: summarize large TextBlock text and truncate
+      ToolUseBlock inputs that carried full file contents (plan_change, edit_file)
+
+    Returns (compressed_messages, chars_saved).
+    """
+    if len(messages) <= _KEEP_RECENT_MESSAGES + 1:
+        return messages, 0  # nothing to compress
+
+    chars_saved = 0
+
+    # Split: [first] + [middle...] + [recent...]
+    first = messages[0]
+    middle = messages[1:-_KEEP_RECENT_MESSAGES]
+    recent = messages[-_KEEP_RECENT_MESSAGES:]
+
+    compressed_middle: list[dict] = []
+
+    for msg in middle:
+        if msg["role"] == "user" and isinstance(msg.get("content"), list):
+            # Tool-result message — compress large result strings
+            new_parts = []
+            for part in msg["content"]:
+                if (
+                    isinstance(part, dict)
+                    and part.get("type") == "tool_result"
+                    and isinstance(part.get("content"), str)
+                    and len(part["content"]) > _SUMMARY_CHAR_LIMIT
+                ):
+                    original = part["content"]
+                    summarised = _compress_tool_result(original)
+                    chars_saved += len(original) - len(summarised)
+                    new_parts.append({**part, "content": summarised})
+                else:
+                    new_parts.append(part)
+            compressed_middle.append({**msg, "content": new_parts})
+
+        elif msg["role"] == "assistant" and isinstance(msg.get("content"), list):
+            # Assistant message — content is a list of SDK ContentBlock objects.
+            # Compress large TextBlock text and ToolUseBlock inputs.
+            new_blocks = []
+            for block in msg["content"]:
+                block_type = getattr(block, "type", None)
+
+                if block_type == "text":
+                    text = getattr(block, "text", "")
+                    if len(text) > _SUMMARY_CHAR_LIMIT:
+                        # Summarise long reasoning text — keep start + end
+                        half = _SUMMARY_CHAR_LIMIT // 2
+                        summarised = f"{text[:half]}\n[…trimmed {len(text)} chars…]\n{text[-half:]}"
+                        chars_saved += len(text) - len(summarised)
+                        # Convert to plain dict so we can modify
+                        new_blocks.append({"type": "text", "text": summarised})
+                    else:
+                        new_blocks.append(block)
+
+                elif block_type == "tool_use":
+                    inp = getattr(block, "input", {})
+                    name = getattr(block, "name", "")
+                    # plan_change and edit_file inputs can carry full file content
+                    if name in ("plan_change", "edit_file") and isinstance(inp, dict):
+                        large_keys = [
+                            k
+                            for k in ("content", "old_string", "new_string")
+                            if isinstance(inp.get(k), str) and len(inp[k]) > _SUMMARY_CHAR_LIMIT
+                        ]
+                        if large_keys:
+                            trimmed_inp = dict(inp)
+                            for k in large_keys:
+                                original = trimmed_inp[k]
+                                trimmed_inp[k] = f"[…{len(original)} chars…]"
+                                chars_saved += len(original) - len(trimmed_inp[k])
+                            new_blocks.append(
+                                {
+                                    "type": "tool_use",
+                                    "id": getattr(block, "id", ""),
+                                    "name": name,
+                                    "input": trimmed_inp,
+                                }
+                            )
+                        else:
+                            new_blocks.append(block)
+                    else:
+                        new_blocks.append(block)
+                else:
+                    new_blocks.append(block)
+
+            compressed_middle.append({**msg, "content": new_blocks})
+        else:
+            compressed_middle.append(msg)
+
+    return [first] + compressed_middle + recent, chars_saved
 
 
 # ── Modifier ──────────────────────────────────────────────────────────────────
@@ -234,9 +386,20 @@ class AgentModifier:
             case "read_file":
                 return self._read_file(inp.get("path", "")), False
             case "search_code":
-                return self._search_code(inp.get("pattern", ""), inp.get("path")), False
+                return (
+                    self._search_code(inp.get("pattern", ""), inp.get("path")),
+                    False,
+                )
             case "edit_file":
-                return self._edit_file(inp["path"], inp["old_string"], inp["new_string"], planned), False
+                return (
+                    self._edit_file(
+                        inp["path"],
+                        inp["old_string"],
+                        inp["new_string"],
+                        planned,
+                    ),
+                    False,
+                )
             case "plan_change":
                 planned.append(
                     FileChange(
@@ -250,6 +413,55 @@ class AgentModifier:
                 return "done", True
             case _:
                 return f"Unknown tool: {name}", False
+
+    # ── API call with retry ──────────────────────────────────────────────────
+
+    async def _api_call_with_retry(
+        self,
+        limiter,
+        estimated_tokens: int,
+        model: str,
+        messages: list[dict],
+    ):
+        """Make an Anthropic API call with rate limiting and retry on 429."""
+        for attempt in range(MAX_RETRIES + 1):
+            entry_id = await limiter.acquire(estimated_tokens)
+            try:
+                response = await self._client.messages.create(
+                    model=model,
+                    max_tokens=8096,
+                    system=_SYSTEM,
+                    tools=_TOOLS,
+                    messages=messages,
+                )
+
+                # Update limiter with actual usage
+                if response.usage:
+                    limiter.record_actual_usage(response.usage.input_tokens, entry_id)
+
+                return response
+            except anthropic.RateLimitError as exc:
+                limiter.remove_entry(entry_id)
+                if attempt == MAX_RETRIES:
+                    raise
+
+                retry_after = _parse_retry_after(exc)
+                backoff = max(retry_after, BASE_BACKOFF * (2**attempt))
+                backoff = min(backoff, MAX_BACKOFF)
+
+                logger.warning(
+                    "Anthropic 429 in agent loop (attempt %d/%d, iter tokens ~%d), retrying in %.1fs",
+                    attempt + 1,
+                    MAX_RETRIES,
+                    estimated_tokens,
+                    backoff,
+                )
+                await asyncio.sleep(backoff)
+            except Exception:
+                limiter.remove_entry(entry_id)
+                raise
+
+        raise RuntimeError("Exhausted retries")
 
     # ── Agent loop ────────────────────────────────────────────────────────────
 
@@ -271,14 +483,32 @@ class AgentModifier:
             }
         ]
 
-        for _ in range(_MAX_ITER):
-            response = await self._client.messages.create(
-                model=model,
-                max_tokens=8096,
-                system=_SYSTEM,
-                tools=_TOOLS,
-                messages=messages,
+        limiter = await get_rate_limiter()
+
+        for iteration in range(_MAX_ITER):
+            # Estimate tokens including tool definitions (crucial for accuracy)
+            estimated = limiter.estimate_tokens(messages, _SYSTEM, tools=_TOOLS)
+
+            # Compress older messages when approaching the token budget
+            if estimated > _COMPRESS_THRESHOLD and len(messages) > _KEEP_RECENT_MESSAGES + 1:
+                messages, chars_saved = _compress_messages(messages)
+                old_estimated = estimated
+                estimated = limiter.estimate_tokens(messages, _SYSTEM, tools=_TOOLS)
+                logger.info(
+                    "Compressed chat history: %d → %d estimated tokens (saved ~%d chars)",
+                    old_estimated,
+                    estimated,
+                    chars_saved,
+                )
+
+            logger.info(
+                "Agent loop iteration %d: estimated %d input tokens, %d messages",
+                iteration + 1,
+                estimated,
+                len(messages),
             )
+
+            response = await self._api_call_with_retry(limiter, estimated, model, messages)
 
             messages.append({"role": "assistant", "content": response.content})
 
@@ -335,3 +565,15 @@ class AgentModifier:
             raise ValueError("Agent did not plan any file changes.")
 
         return ModificationPlan(changes=planned, commit_message=commit_message)
+
+
+def _parse_retry_after(exc: anthropic.RateLimitError) -> float:
+    """Extract retry-after seconds from the exception's response headers."""
+    try:
+        if exc.response and exc.response.headers:
+            val = exc.response.headers.get("retry-after")
+            if val:
+                return float(val)
+    except (AttributeError, ValueError, TypeError):
+        pass
+    return 0.0
