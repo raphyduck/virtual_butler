@@ -21,8 +21,6 @@ ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL
 # They must be declared as ARGs here so docker-compose can pass them in.
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-ARG NEXT_PUBLIC_WS_URL=ws://localhost:8000
-ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 RUN npm run build
 
 # ─── Production ───────────────────────────────────────────────────────────────
@@ -37,6 +35,8 @@ RUN mkdir -p ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static   ./.next/static
 COPY --from=builder /app/public         ./public
+# Custom server.js adds WebSocket proxy support (the auto-generated one doesn't)
+COPY --from=builder /app/server.js      ./server.js
 
 EXPOSE 3000
 ENV PORT=3000 \

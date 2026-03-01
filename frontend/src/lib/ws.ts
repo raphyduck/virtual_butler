@@ -1,8 +1,12 @@
 import { type ButlerJob, refreshTokens } from './api';
 import { getToken, getRefreshToken, isTokenValid, setToken, setRefreshToken } from './auth';
 
+/** Derive the WebSocket base URL.
+ *  Prefer the explicit env var.  Otherwise connect to the *same* origin that
+ *  serves the page so the connection goes through the Next.js / nginx proxy
+ *  instead of requiring direct access to the backend port. */
 const WS_BASE = typeof window !== 'undefined'
-  ? (process.env.NEXT_PUBLIC_WS_URL ?? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8000`)
+  ? (process.env.NEXT_PUBLIC_WS_URL ?? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`)
   : 'ws://localhost:8000';
 
 export type WsEvent =
