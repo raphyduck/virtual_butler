@@ -76,12 +76,16 @@ class ButlerHandler:
 
     Persists conversation history to the conversations / butler_messages tables
     so that chat survives page reloads.
+
+    Pass ``conversation_id`` to target a specific existing conversation instead
+    of always resuming the most recent one.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, conversation_id: str | None = None) -> None:
         self._history: list[ChatMessage] = []
         self._pending_action: dict | None = None
-        self._conversation_id: uuid.UUID | None = None
+        self._conversation_id: uuid.UUID | None = uuid.UUID(conversation_id) if conversation_id else None
+        self._initialized = False  # True once history has been loaded from DB
 
     # ── Context helpers ────────────────────────────────────────────────────────
 
@@ -154,14 +158,30 @@ class ButlerHandler:
         return action
 
     async def _ensure_conversation(self, db: AsyncSession, user_id: str) -> uuid.UUID:
-        """Resume the latest conversation or create a new one.
+        """Load the target conversation (or the latest one) and populate history.
 
-        On the first call per connection, queries the DB for the user's most
-        recent conversation and reloads its messages into ``_history`` so the
-        AI sees the full prior context.
+        On the first call per connection:
+        - If a ``conversation_id`` was supplied, loads that specific conversation.
+        - Otherwise resumes the most recent conversation or creates a fresh one.
+        Subsequent calls are no-ops (history is already in memory).
         """
+        if self._initialized:
+            return self._conversation_id  # type: ignore[return-value]
+
         if self._conversation_id is not None:
-            return self._conversation_id
+            # Load the specific conversation requested by the client
+            result = await db.execute(
+                select(Conversation)
+                .where(Conversation.id == self._conversation_id)
+                .where(Conversation.user_id == uuid.UUID(user_id))
+                .options(selectinload(Conversation.butler_messages))
+            )
+            conv = result.scalar_one_or_none()
+            if conv is not None:
+                self._history = [ChatMessage(role=m.role, content=m.content) for m in conv.butler_messages]
+                self._initialized = True
+                return conv.id
+            # Conversation not found / doesn't belong to this user — fall through
 
         # Try to resume the latest conversation
         result = await db.execute(
@@ -174,9 +194,9 @@ class ButlerHandler:
         conv = result.scalar_one_or_none()
 
         if conv is not None:
-            # Reload prior messages into in-memory history for multi-turn context
             self._history = [ChatMessage(role=m.role, content=m.content) for m in conv.butler_messages]
             self._conversation_id = conv.id
+            self._initialized = True
             return conv.id
 
         # No previous conversation — create a fresh one
@@ -184,6 +204,7 @@ class ButlerHandler:
         db.add(conv)
         await db.flush()
         self._conversation_id = conv.id
+        self._initialized = True
         return conv.id
 
     async def run(
