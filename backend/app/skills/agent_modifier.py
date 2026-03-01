@@ -181,6 +181,131 @@ _READ_LIMIT = 25_000
 _SEARCH_LIMIT = 5_000
 _LIST_LIMIT = 600  # max lines in file listing
 
+# ── History compression settings ──────────────────────────────────────────────
+# When estimated input tokens exceed this, compress older messages to free budget.
+_COMPRESS_THRESHOLD = 12_000  # tokens (~53% of 22.5k effective budget)
+_KEEP_RECENT_MESSAGES = 4  # keep the last N messages intact (= 2 iterations)
+_SUMMARY_CHAR_LIMIT = 300  # max chars to keep from truncated tool results
+
+
+# ── Message compression ──────────────────────────────────────────────────────
+
+
+def _compress_tool_result(content: str) -> str:
+    """Compress a large tool_result string to a short summary."""
+    lines = content.splitlines()
+    num_lines = len(lines)
+    total_chars = len(content)
+
+    # Keep the first few lines (often imports / class defs) as a hint
+    preview_lines = lines[:8]
+    preview = "\n".join(preview_lines)
+    if len(preview) > _SUMMARY_CHAR_LIMIT:
+        preview = preview[:_SUMMARY_CHAR_LIMIT]
+
+    return f"[Summarized — {total_chars} chars, {num_lines} lines]\n{preview}\n…"
+
+
+def _compress_messages(messages: list[dict]) -> tuple[list[dict], int]:
+    """Compress older messages to reduce token usage.
+
+    Strategy:
+    - Keep messages[0] (initial instruction + file tree) intact
+    - Keep the last ``_KEEP_RECENT_MESSAGES`` messages intact (recent context)
+    - For older tool_result content (user messages): replace large strings with
+      a short summary preserving the first few lines
+    - For older assistant messages: summarize large TextBlock text and truncate
+      ToolUseBlock inputs that carried full file contents (plan_change, edit_file)
+
+    Returns (compressed_messages, chars_saved).
+    """
+    if len(messages) <= _KEEP_RECENT_MESSAGES + 1:
+        return messages, 0  # nothing to compress
+
+    chars_saved = 0
+
+    # Split: [first] + [middle...] + [recent...]
+    first = messages[0]
+    middle = messages[1:-_KEEP_RECENT_MESSAGES]
+    recent = messages[-_KEEP_RECENT_MESSAGES:]
+
+    compressed_middle: list[dict] = []
+
+    for msg in middle:
+        if msg["role"] == "user" and isinstance(msg.get("content"), list):
+            # Tool-result message — compress large result strings
+            new_parts = []
+            for part in msg["content"]:
+                if (
+                    isinstance(part, dict)
+                    and part.get("type") == "tool_result"
+                    and isinstance(part.get("content"), str)
+                    and len(part["content"]) > _SUMMARY_CHAR_LIMIT
+                ):
+                    original = part["content"]
+                    summarised = _compress_tool_result(original)
+                    chars_saved += len(original) - len(summarised)
+                    new_parts.append({**part, "content": summarised})
+                else:
+                    new_parts.append(part)
+            compressed_middle.append({**msg, "content": new_parts})
+
+        elif msg["role"] == "assistant" and isinstance(msg.get("content"), list):
+            # Assistant message — content is a list of SDK ContentBlock objects.
+            # Compress large TextBlock text and ToolUseBlock inputs.
+            new_blocks = []
+            for block in msg["content"]:
+                block_type = getattr(block, "type", None)
+
+                if block_type == "text":
+                    text = getattr(block, "text", "")
+                    if len(text) > _SUMMARY_CHAR_LIMIT:
+                        # Summarise long reasoning text — keep start + end
+                        half = _SUMMARY_CHAR_LIMIT // 2
+                        summarised = f"{text[:half]}\n[…trimmed {len(text)} chars…]\n{text[-half:]}"
+                        chars_saved += len(text) - len(summarised)
+                        # Convert to plain dict so we can modify
+                        new_blocks.append({"type": "text", "text": summarised})
+                    else:
+                        new_blocks.append(block)
+
+                elif block_type == "tool_use":
+                    inp = getattr(block, "input", {})
+                    name = getattr(block, "name", "")
+                    # plan_change and edit_file inputs can carry full file content
+                    if name in ("plan_change", "edit_file") and isinstance(inp, dict):
+                        large_keys = [
+                            k
+                            for k in ("content", "old_string", "new_string")
+                            if isinstance(inp.get(k), str) and len(inp[k]) > _SUMMARY_CHAR_LIMIT
+                        ]
+                        if large_keys:
+                            trimmed_inp = dict(inp)
+                            for k in large_keys:
+                                original = trimmed_inp[k]
+                                trimmed_inp[k] = f"[…{len(original)} chars…]"
+                                chars_saved += len(original) - len(trimmed_inp[k])
+                            new_blocks.append(
+                                {
+                                    "type": "tool_use",
+                                    "id": getattr(block, "id", ""),
+                                    "name": name,
+                                    "input": trimmed_inp,
+                                }
+                            )
+                        else:
+                            new_blocks.append(block)
+                    else:
+                        new_blocks.append(block)
+                else:
+                    new_blocks.append(block)
+
+            compressed_middle.append({**msg, "content": new_blocks})
+        else:
+            compressed_middle.append(msg)
+
+    return [first] + compressed_middle + recent, chars_saved
+
 
 # ── Modifier ──────────────────────────────────────────────────────────────────
 
@@ -363,6 +488,18 @@ class AgentModifier:
         for iteration in range(_MAX_ITER):
             # Estimate tokens including tool definitions (crucial for accuracy)
             estimated = limiter.estimate_tokens(messages, _SYSTEM, tools=_TOOLS)
+
+            # Compress older messages when approaching the token budget
+            if estimated > _COMPRESS_THRESHOLD and len(messages) > _KEEP_RECENT_MESSAGES + 1:
+                messages, chars_saved = _compress_messages(messages)
+                old_estimated = estimated
+                estimated = limiter.estimate_tokens(messages, _SYSTEM, tools=_TOOLS)
+                logger.info(
+                    "Compressed chat history: %d → %d estimated tokens (saved ~%d chars)",
+                    old_estimated,
+                    estimated,
+                    chars_saved,
+                )
 
             logger.info(
                 "Agent loop iteration %d: estimated %d input tokens, %d messages",
