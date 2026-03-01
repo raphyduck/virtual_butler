@@ -4,11 +4,21 @@
  * ButlerChatFull — full-page Butler chat for the dashboard.
  *
  * Same WebSocket logic as ButlerChat but rendered as a full-height
- * inline panel instead of a floating popup.
+ * inline panel instead of a floating popup. Includes the conversation
+ * sidebar so users can switch between past chats or start new ones.
  */
 
-import { useEffect, useRef, useState } from 'react';
-import { type ButlerJob, cancelModifyJob, confirmModifyJob, getButlerHistory, mergeModifyJob } from '@/lib/api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  type ButlerConversationSummary,
+  type ButlerJob,
+  cancelModifyJob,
+  confirmModifyJob,
+  createButlerConversation,
+  getButlerConversation,
+  listButlerConversations,
+  mergeModifyJob,
+} from '@/lib/api';
 import { type AgentStep, ButlerWebSocket, type ButlerWsEvent } from '@/lib/ws';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -34,6 +44,16 @@ type ChatMessage = TextMessage | JobMessage;
 
 function uid() {
   return Math.random().toString(36).slice(2);
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
+  if (diffDays === 0) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return d.toLocaleDateString([], { weekday: 'short' });
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -343,6 +363,68 @@ function MessageBubble({
   );
 }
 
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+
+function ConversationSidebar({
+  conversations,
+  activeId,
+  onSelect,
+  onNew,
+  loading,
+}: {
+  conversations: ButlerConversationSummary[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="flex w-56 shrink-0 flex-col border-r border-gray-200 bg-gray-50">
+      {/* New chat button */}
+      <div className="p-3">
+        <button
+          onClick={onNew}
+          className="flex w-full items-center gap-1.5 rounded-lg border border-green-200 bg-white px-3 py-2 text-sm font-medium text-green-700 shadow-sm hover:bg-green-50 hover:border-green-300 transition-colors"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          New chat
+        </button>
+      </div>
+
+      {/* Conversation list */}
+      <div className="flex-1 overflow-y-auto">
+        {loading && (
+          <p className="px-3 py-4 text-center text-xs text-gray-400">Loading…</p>
+        )}
+        {!loading && conversations.length === 0 && (
+          <p className="px-3 py-4 text-center text-xs text-gray-400">No past chats</p>
+        )}
+        {conversations.map((conv) => {
+          const isActive = conv.id === activeId;
+          return (
+            <button
+              key={conv.id}
+              onClick={() => onSelect(conv.id)}
+              className={`w-full px-3 py-2.5 text-left transition-colors hover:bg-gray-100 ${
+                isActive ? 'bg-green-50 border-r-2 border-green-500' : ''
+              }`}
+            >
+              <p className={`text-xs font-medium ${isActive ? 'text-green-700' : 'text-gray-500'}`}>
+                {formatDate(conv.updated_at)}
+              </p>
+              <p className="mt-0.5 line-clamp-2 text-xs text-gray-700 leading-tight">
+                {conv.preview ?? <span className="italic text-gray-400">Empty chat</span>}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ButlerChatFull() {
@@ -351,36 +433,82 @@ export default function ButlerChatFull() {
   const [sending, setSending] = useState(false);
   const [connected, setConnected] = useState(false);
 
+  // Sidebar state
+  const [conversations, setConversations] = useState<ButlerConversationSummary[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+
   const wsRef = useRef<ButlerWebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Load chat history from the server on mount
-  useEffect(() => {
-    getButlerHistory()
-      .then((conv) => {
-        if (conv && conv.messages.length > 0) {
-          setMessages(
-            conv.messages.map((m) => ({
-              id: m.id,
-              kind: 'text' as const,
-              role: m.role === 'user' ? ('user' as const) : ('butler' as const),
-              content: m.content,
-            })),
-          );
-        }
-      })
-      .catch(() => {/* start fresh if fetch fails */});
-  }, []);
+  // ── Connect WebSocket for a given conversationId ─────────────────────────
 
-  useEffect(() => {
-    const ws = new ButlerWebSocket(handleWsEvent);
+  const connectWs = useCallback((conversationId: string | null) => {
+    wsRef.current?.close();
+    const ws = new ButlerWebSocket(handleWsEvent, conversationId);
     wsRef.current = ws;
     ws.connect();
-    const timer = setInterval(() => setConnected(ws.isConnected), 500);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Load conversation list ───────────────────────────────────────────────
+
+  const refreshConversations = useCallback(async () => {
+    try {
+      const list = await listButlerConversations();
+      setConversations(list);
+      return list;
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // ── Initial setup on mount ───────────────────────────────────────────────
+
+  useEffect(() => {
+    async function init() {
+      setLoadingConversations(true);
+      try {
+        const list = await listButlerConversations();
+        setConversations(list);
+
+        if (list.length > 0) {
+          const latest = list[0];
+          setActiveConversationId(latest.id);
+
+          try {
+            const conv = await getButlerConversation(latest.id);
+            if (conv.messages.length > 0) {
+              setMessages(
+                conv.messages.map((m) => ({
+                  id: m.id,
+                  kind: 'text' as const,
+                  role: m.role === 'user' ? ('user' as const) : ('butler' as const),
+                  content: m.content,
+                })),
+              );
+            }
+          } catch {/* start fresh if fetch fails */}
+
+          connectWs(latest.id);
+        } else {
+          // No conversations yet — connect without an ID (backend creates one on first message)
+          connectWs(null);
+        }
+      } finally {
+        setLoadingConversations(false);
+      }
+    }
+
+    init();
+
+    const timer = setInterval(() => {
+      setConnected(wsRef.current?.isConnected ?? false);
+    }, 500);
+
     return () => {
       clearInterval(timer);
-      ws.close();
+      wsRef.current?.close();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -416,6 +544,12 @@ export default function ButlerChatFull() {
         return prev;
       });
       setSending(false);
+      // Refresh conversation list to update previews
+      refreshConversations().then((list) => {
+        if (list.length > 0 && !activeConversationId) {
+          setActiveConversationId(list[0].id);
+        }
+      });
     } else if (event.type === 'error') {
       setMessages((prev) => [
         ...prev,
@@ -465,6 +599,46 @@ export default function ButlerChatFull() {
     );
   }
 
+  // ── Switch to a different conversation ───────────────────────────────────
+
+  async function selectConversation(id: string) {
+    if (id === activeConversationId) return;
+    setActiveConversationId(id);
+    setMessages([]);
+    setSending(false);
+
+    try {
+      const conv = await getButlerConversation(id);
+      setMessages(
+        conv.messages.map((m) => ({
+          id: m.id,
+          kind: 'text' as const,
+          role: m.role === 'user' ? ('user' as const) : ('butler' as const),
+          content: m.content,
+        })),
+      );
+    } catch {/* show empty chat on failure */}
+
+    connectWs(id);
+  }
+
+  // ── Start a new conversation ─────────────────────────────────────────────
+
+  async function startNewConversation() {
+    try {
+      const conv = await createButlerConversation();
+      setConversations((prev) => [
+        { id: conv.id, created_at: conv.created_at, updated_at: conv.updated_at, preview: null },
+        ...prev,
+      ]);
+      setActiveConversationId(conv.id);
+      setMessages([]);
+      setSending(false);
+      connectWs(conv.id);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    } catch {/* silently ignore */}
+  }
+
   function send() {
     const content = input.trim();
     if (!content || sending) return;
@@ -496,76 +670,88 @@ export default function ButlerChatFull() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Connection indicator */}
-      <div className="flex items-center gap-2 px-1 pb-3">
-        <span
-          className={`h-2 w-2 rounded-full ${connected ? 'bg-green-500' : 'bg-gray-300 animate-pulse'}`}
-        />
-        <span className="text-xs text-gray-400">
-          {connected ? 'Connected' : 'Connecting…'}
-        </span>
-      </div>
+    <div className="flex h-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      {/* Sidebar */}
+      <ConversationSidebar
+        conversations={conversations}
+        activeId={activeConversationId}
+        onSelect={selectConversation}
+        onNew={startNewConversation}
+        loading={loadingConversations}
+      />
 
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto space-y-4 pb-4">
-        {messages.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center px-8">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-500 to-emerald-600 text-2xl text-white shadow-lg">
-              PA
-            </div>
-            <h2 className="text-lg font-semibold text-gray-800">
-              How can I help you today?
-            </h2>
-            <p className="max-w-md text-sm text-gray-400">
-              Ask me anything — manage your skills, check platform stats,
-              change settings, or ask me to modify the platform itself.
-            </p>
-          </div>
-        )}
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} msg={msg} onJobUpdate={handleJobUpdate} />
-        ))}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Input area */}
-      <div className="border-t border-gray-200 pt-4">
-        <div className="flex items-end gap-3">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Message your Personal Assistant… (Enter to send)"
-            rows={1}
-            disabled={sending}
-            className="flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400 disabled:opacity-60"
-            style={{ maxHeight: '160px', overflowY: 'auto' }}
-            onInput={(e) => {
-              const el = e.currentTarget;
-              el.style.height = 'auto';
-              el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-            }}
+      {/* Chat area */}
+      <div className="flex flex-1 flex-col overflow-hidden p-4">
+        {/* Connection indicator */}
+        <div className="flex items-center gap-2 pb-3">
+          <span
+            className={`h-2 w-2 rounded-full ${connected ? 'bg-green-500' : 'bg-gray-300 animate-pulse'}`}
           />
-          <button
-            onClick={send}
-            disabled={sending || !input.trim()}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:opacity-40"
-            aria-label="Send"
-          >
-            {sending ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-            ) : (
-              <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-              </svg>
-            )}
-          </button>
+          <span className="text-xs text-gray-400">
+            {connected ? 'Connected' : 'Connecting…'}
+          </span>
         </div>
-        <p className="mt-1.5 text-center text-[10px] text-gray-400">
-          Shift+Enter for new line
-        </p>
+
+        {/* Messages area */}
+        <div className="flex-1 overflow-y-auto space-y-4 pb-4">
+          {messages.length === 0 && (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-center px-8">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-500 to-emerald-600 text-2xl text-white shadow-lg">
+                PA
+              </div>
+              <h2 className="text-lg font-semibold text-gray-800">
+                How can I help you today?
+              </h2>
+              <p className="max-w-md text-sm text-gray-400">
+                Ask me anything — manage your skills, check platform stats,
+                change settings, or ask me to modify the platform itself.
+              </p>
+            </div>
+          )}
+          {messages.map((msg) => (
+            <MessageBubble key={msg.id} msg={msg} onJobUpdate={handleJobUpdate} />
+          ))}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input area */}
+        <div className="border-t border-gray-200 pt-4">
+          <div className="flex items-end gap-3">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Message your Personal Assistant… (Enter to send)"
+              rows={1}
+              disabled={sending}
+              className="flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400 disabled:opacity-60"
+              style={{ maxHeight: '160px', overflowY: 'auto' }}
+              onInput={(e) => {
+                const el = e.currentTarget;
+                el.style.height = 'auto';
+                el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+              }}
+            />
+            <button
+              onClick={send}
+              disabled={sending || !input.trim()}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:opacity-40"
+              aria-label="Send"
+            >
+              {sending ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              ) : (
+                <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                </svg>
+              )}
+            </button>
+          </div>
+          <p className="mt-1.5 text-center text-[10px] text-gray-400">
+            Shift+Enter for new line
+          </p>
+        </div>
       </div>
     </div>
   );
