@@ -457,11 +457,27 @@ export default function ButlerChat() {
         { id: uid(), kind: 'text', role: 'system', content: `⚠ ${event.detail}` },
       ]);
       setSending(false);
-    } else if (event.type === 'modify_started') {
+    } else if (event.type === 'reconnected') {
       setMessages((prev) => [
         ...prev,
-        { id: uid(), kind: 'job', job: event.job, steps: [] },
+        { id: uid(), kind: 'text', role: 'system', content: 'Reconnected' },
       ]);
+    } else if (event.type === 'modify_started') {
+      setMessages((prev) => {
+        // If the job already exists (reconnect scenario), update it and reset
+        // steps — they will be re-sent immediately after by the server.
+        const exists = prev.some(
+          (m) => m.kind === 'job' && m.job.id === event.job.id,
+        );
+        if (exists) {
+          return prev.map((m) =>
+            m.kind === 'job' && m.job.id === event.job.id
+              ? { ...m, job: event.job, steps: [] }
+              : m,
+          );
+        }
+        return [...prev, { id: uid(), kind: 'job', job: event.job, steps: [] }];
+      });
     } else if (event.type === 'modify_step') {
       // Append the agent step to the matching job message
       setMessages((prev) =>
@@ -502,9 +518,8 @@ export default function ButlerChat() {
     if (!wsRef.current?.isConnected) {
       setMessages((prev) => [
         ...prev,
-        { id: uid(), kind: 'text', role: 'system', content: '⚠ Not connected — reconnecting…' },
+        { id: uid(), kind: 'text', role: 'system', content: '⚠ Not connected — reconnecting automatically…' },
       ]);
-      wsRef.current?.connect();
       setSending(false);
       return;
     }
