@@ -74,22 +74,42 @@ export type ButlerWsEvent =
   | { type: 'modify_started'; job: ButlerJob }
   | { type: 'modify_step'; job_id: string; step: AgentStep }
   | { type: 'modify_update'; job: ButlerJob }
-  | { type: 'modify_done'; job: ButlerJob };
+  | { type: 'modify_done'; job: ButlerJob }
+  | { type: 'reconnected' };
 
 export type ButlerWsEventHandler = (event: ButlerWsEvent) => void;
 
 export class ButlerWebSocket {
   private ws: WebSocket | null = null;
   private onEvent: ButlerWsEventHandler;
+  private _intentionalClose = false;
+  private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private _reconnectDelay = 1000;
+  private _hasConnectedBefore = false;
+  private static readonly MAX_RECONNECT_DELAY = 30000;
 
   constructor(onEvent: ButlerWsEventHandler) {
     this.onEvent = onEvent;
   }
 
   connect(): void {
+    this._intentionalClose = false;
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+
     const token = getToken();
     const url = `${WS_BASE}/ws/butler${token ? `?token=${token}` : ''}`;
     this.ws = new WebSocket(url);
+
+    this.ws.onopen = () => {
+      this._reconnectDelay = 1000;
+      if (this._hasConnectedBefore) {
+        this.onEvent({ type: 'reconnected' });
+      }
+      this._hasConnectedBefore = true;
+    };
 
     this.ws.onmessage = (e) => {
       try {
@@ -101,12 +121,27 @@ export class ButlerWebSocket {
     };
 
     this.ws.onerror = () => {
-      this.onEvent({ type: 'error', detail: 'WebSocket connection error' });
+      // Error events are followed by close; reconnect is handled in onclose
     };
 
     this.ws.onclose = () => {
       this.ws = null;
+      if (!this._intentionalClose) {
+        this._scheduleReconnect();
+      }
     };
+  }
+
+  private _scheduleReconnect(): void {
+    if (this._reconnectTimer) return;
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      this.connect();
+    }, this._reconnectDelay);
+    this._reconnectDelay = Math.min(
+      this._reconnectDelay * 2,
+      ButlerWebSocket.MAX_RECONNECT_DELAY,
+    );
   }
 
   send(content: string): void {
@@ -118,6 +153,11 @@ export class ButlerWebSocket {
   }
 
   close(): void {
+    this._intentionalClose = true;
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
     this.ws?.close();
     this.ws = null;
   }

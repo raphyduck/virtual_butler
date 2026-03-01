@@ -422,11 +422,25 @@ export default function ButlerChatFull() {
         { id: uid(), kind: 'text', role: 'system', content: event.detail },
       ]);
       setSending(false);
-    } else if (event.type === 'modify_started') {
+    } else if (event.type === 'reconnected') {
       setMessages((prev) => [
         ...prev,
-        { id: uid(), kind: 'job', job: event.job, steps: [] },
+        { id: uid(), kind: 'text', role: 'system', content: 'Reconnected' },
       ]);
+    } else if (event.type === 'modify_started') {
+      setMessages((prev) => {
+        const exists = prev.some(
+          (m) => m.kind === 'job' && m.job.id === event.job.id,
+        );
+        if (exists) {
+          return prev.map((m) =>
+            m.kind === 'job' && m.job.id === event.job.id
+              ? { ...m, job: event.job, steps: [] }
+              : m,
+          );
+        }
+        return [...prev, { id: uid(), kind: 'job', job: event.job, steps: [] }];
+      });
     } else if (event.type === 'modify_step') {
       setMessages((prev) =>
         prev.map((m) =>
@@ -464,9 +478,8 @@ export default function ButlerChatFull() {
     if (!wsRef.current?.isConnected) {
       setMessages((prev) => [
         ...prev,
-        { id: uid(), kind: 'text', role: 'system', content: 'Not connected — reconnecting…' },
+        { id: uid(), kind: 'text', role: 'system', content: 'Not connected — reconnecting automatically…' },
       ]);
-      wsRef.current?.connect();
       setSending(false);
       return;
     }
