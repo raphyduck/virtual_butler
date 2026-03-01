@@ -1,12 +1,203 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Personal Assistant</title>
+    <link rel="stylesheet" href="styles/main.css" />
+    <link rel="stylesheet" href="styles/sidebar.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <!-- ═══════════════════════════════════════════════
+         APP SHELL
+    ════════════════════════════════════════════════ -->
+    <div class="app" id="app">
+
+      <!-- ── Sidebar ───────────────────────────────── -->
+      <aside class="sidebar" id="sidebar" aria-label="Chat sessions">
+
+        <!-- Sidebar header -->
+        <div class="sidebar__header">
+          <div class="sidebar__brand">
+            <span class="sidebar__brand-icon" aria-hidden="true">✦</span>
+            <span class="sidebar__brand-name">Assistant</span>
+          </div>
+          <button
+            class="sidebar__collapse-btn icon-btn"
+            id="sidebarCollapseBtn"
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
+          >
+            <!-- chevron-left -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+        </div>
+
+        <!-- New Chat button -->
+        <div class="sidebar__actions">
+          <button class="new-chat-btn" id="newChatBtn" aria-label="Start a new chat">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.5"
+                 stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>New Chat</span>
+          </button>
+        </div>
+
+        <!-- Section label -->
+        <p class="sidebar__section-label">Recent</p>
+
+        <!-- Session list -->
+        <nav class="sidebar__nav" id="sessionList" aria-label="Chat history">
+          <!-- Sessions are injected by sidebar.js -->
+        </nav>
+
+        <!-- Sidebar footer -->
+        <div class="sidebar__footer">
+          <button class="sidebar__footer-btn icon-btn" aria-label="Settings" title="Settings">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83
+                       2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0
+                       0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9
+                       19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0
+                       1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65
+                       1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65
+                       0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2
+                       2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9
+                       4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4
+                       0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0
+                       1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65
+                       1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2
+                       0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <span>Settings</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Sidebar overlay (mobile) -->
+      <div class="sidebar-overlay" id="sidebarOverlay" aria-hidden="true"></div>
+
+      <!-- ── Main area ──────────────────────────────── -->
+      <div class="main" id="main">
+
+        <!-- Top bar -->
+        <header class="topbar" id="topbar">
+          <button
+            class="topbar__menu-btn icon-btn"
+            id="sidebarOpenBtn"
+            aria-label="Open sidebar"
+            title="Open sidebar"
+          >
+            <!-- menu / hamburger -->
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6"  x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+
+          <h1 class="topbar__title" id="topbarTitle">New Chat</h1>
+
+          <div class="topbar__actions">
+            <button class="icon-btn" aria-label="More options" title="More options">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="5"  r="1"></circle>
+                <circle cx="12" cy="12" r="1"></circle>
+                <circle cx="12" cy="19" r="1"></circle>
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <!-- Chat messages -->
+        <div class="chat-viewport" id="chatViewport" role="log" aria-live="polite">
+          <!-- Welcome splash shown when session is empty -->
+          <div class="chat-splash" id="chatSplash">
+            <div class="chat-splash__icon" aria-hidden="true">✦</div>
+            <h2 class="chat-splash__heading">How can I help you today?</h2>
+            <p class="chat-splash__sub">
+              Ask me anything — I remember everything within this conversation.
+            </p>
+            <div class="chat-splash__suggestions" id="splashSuggestions">
+              <button class="suggestion-chip" data-text="Explain quantum entanglement simply.">
+                Explain quantum entanglement
+              </button>
+              <button class="suggestion-chip" data-text="Write a short poem about the ocean.">
+                Write a poem about the ocean
+              </button>
+              <button class="suggestion-chip" data-text="What are the best productivity tips?">
+                Best productivity tips
+              </button>
+              <button class="suggestion-chip" data-text="Debug this code: for i in range(10) print(i)">
+                Help me debug code
+              </button>
+            </div>
+          </div>
+
+          <!-- Messages are injected here by chat.js -->
+          <div class="messages" id="messages"></div>
+        </div>
+
+        <!-- Input area -->
+        <footer class="input-area" id="inputArea">
+          <div class="input-wrapper">
+            <textarea
+              class="chat-input"
+              id="chatInput"
+              placeholder="Message Assistant…"
+              rows="1"
+              aria-label="Message input"
+              autocomplete="off"
+              spellcheck="true"
+            ></textarea>
+            <button
+              class="send-btn"
+              id="sendBtn"
+              aria-label="Send message"
+              title="Send (Enter)"
+              disabled
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2.5"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="19" x2="12" y2="5"></line>
+                <polyline points="5 12 12 5 19 12"></polyline>
+              </svg>
+            </button>
+          </div>
+          <p class="input-area__hint">
+            Assistant can make mistakes. Verify important information.
+          </p>
+        </footer>
+
+      </div><!-- /.main -->
+    </div><!-- /#app -->
+
+    <!-- Scripts (order matters) -->
+    <script src="scripts/store.js"></script>
+    <script src="scripts/sidebar.js"></script>
+    <script src="scripts/chat.js"></script>
+    <script src="scripts/app.js"></script>
   </body>
 </html>
