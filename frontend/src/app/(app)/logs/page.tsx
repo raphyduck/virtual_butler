@@ -27,6 +27,7 @@ export default function LogsPage() {
   const [search, setSearch] = useState('');
   const [live, setLive] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [copyLabel, setCopyLabel] = useState('Copy all');
   const bottomRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -137,6 +138,25 @@ export default function LogsPage() {
             onChange={(e) => setSearch(e.target.value)}
             className="w-48 rounded border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
           />
+
+          {/* Copy all visible logs */}
+          <button
+            onClick={() => {
+              const text = visible
+                .map(
+                  (e) =>
+                    `${new Date(e.ts).toISOString()} [${e.level}] ${e.logger}: ${e.message}`,
+                )
+                .join('\n');
+              navigator.clipboard.writeText(text).then(() => {
+                setCopyLabel('Copied!');
+                setTimeout(() => setCopyLabel('Copy all'), 1500);
+              });
+            }}
+            className="rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+          >
+            {copyLabel}
+          </button>
 
           {/* Clear */}
           <button
