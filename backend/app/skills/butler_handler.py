@@ -84,9 +84,7 @@ class ButlerHandler:
     def __init__(self, conversation_id: str | None = None) -> None:
         self._history: list[ChatMessage] = []
         self._pending_action: dict | None = None
-        self._conversation_id: uuid.UUID | None = (
-            uuid.UUID(conversation_id) if conversation_id else None
-        )
+        self._conversation_id: uuid.UUID | None = uuid.UUID(conversation_id) if conversation_id else None
         self._initialized = False  # True once history has been loaded from DB
 
     # ── Context helpers ────────────────────────────────────────────────────────
