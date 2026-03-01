@@ -195,7 +195,10 @@ class CodeModifier:
             diag = self._git_diagnostics()
             logger.error(
                 "git command failed: %s\nstderr: %s\nstdout: %s\n--- diagnostics ---\n%s",
-                safe_cmd, safe_stderr, safe_stdout, diag,
+                safe_cmd,
+                safe_stderr,
+                safe_stdout,
+                diag,
             )
             raise RuntimeError(
                 f"git command failed (exit {result.returncode}): {safe_cmd}\n{safe_stderr}\n--- diagnostics ---\n{diag}"
@@ -234,7 +237,8 @@ class CodeModifier:
                 r = subprocess.run(
                     ["git", "config", f"--{scope}", "--get-all", "safe.directory"],
                     cwd=self.repo_root,
-                    capture_output=True, text=True,
+                    capture_output=True,
+                    text=True,
                 )
                 val = r.stdout.strip() or "(empty)"
                 lines.append(f"  safe.directory [{scope}]: {val}")
