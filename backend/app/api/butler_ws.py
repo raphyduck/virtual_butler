@@ -132,7 +132,7 @@ async def _watch_job(websocket: WebSocket, job_id: uuid.UUID) -> None:
                     )
                 )
 
-        # ── Phase 2: poll until terminal or paused (awaiting user action) ────
+        # ── Phase 2: poll until terminal ──────────────────────────────────────
         while True:
             await asyncio.sleep(1.5)
             async with AsyncSessionLocal() as db:
@@ -140,10 +140,9 @@ async def _watch_job(websocket: WebSocket, job_id: uuid.UUID) -> None:
                 if job is None:
                     break
                 is_done = job.status in _TERMINAL
-                is_paused = job.status in _PAUSE
                 event_type = "modify_done" if is_done else "modify_update"
                 await websocket.send_text(json.dumps({"type": event_type, "job": _job_dict(job)}))
-                if is_done or is_paused:
+                if is_done:
                     break
 
     except WebSocketDisconnect:
@@ -232,11 +231,10 @@ async def websocket_butler(websocket: WebSocket) -> None:
                                 "step": step,
                             }
                         )
-                # Start a watcher for jobs that are actively progressing
-                # (skip awaiting_merge — user must click Merge first)
-                if job.status not in _PAUSE:
-                    task = asyncio.create_task(_watch_job(websocket, job.id))
-                    watch_tasks.append(task)
+                # Start a watcher so the client is notified when the job
+                # reaches a terminal state (covers the merge+deploy phase too).
+                task = asyncio.create_task(_watch_job(websocket, job.id))
+                watch_tasks.append(task)
 
             # Recently-terminal jobs — replay so the job card is visible after
             # a reconnect or page reload even if the final event was missed.
