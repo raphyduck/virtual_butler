@@ -458,6 +458,7 @@ export default function ButlerChat() {
       ]);
       setSending(false);
     } else if (event.type === 'reconnected') {
+      setSending(false);
       setMessages((prev) => [
         ...prev,
         { id: uid(), kind: 'text', role: 'system', content: 'Reconnected' },
