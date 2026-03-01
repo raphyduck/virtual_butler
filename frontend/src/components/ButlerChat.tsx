@@ -1,17 +1,27 @@
 'use client';
 
 /**
- * ButlerChat — floating AI platform assistant.
+ * ButlerChat — floating AI platform assistant with conversation sidebar.
  *
- * • Connects to /ws/butler via WebSocket
+ * • Connects to /ws/butler via WebSocket (with optional conversation_id)
+ * • Sidebar lists past conversations; "New Chat" button starts a fresh one
  * • Streams responses in real-time
  * • When the AI triggers a code modification, shows a job status card inline
  *   with a live agent step log so the user can watch the agent work
  * • Users confirm / cancel jobs from within the chat
  */
 
-import { useEffect, useRef, useState } from 'react';
-import { type ButlerJob, cancelModifyJob, confirmModifyJob, getButlerHistory, mergeModifyJob } from '@/lib/api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  type ButlerConversationSummary,
+  type ButlerJob,
+  cancelModifyJob,
+  confirmModifyJob,
+  createButlerConversation,
+  getButlerConversation,
+  listButlerConversations,
+  mergeModifyJob,
+} from '@/lib/api';
 import { type AgentStep, ButlerWebSocket, type ButlerWsEvent } from '@/lib/ws';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -79,7 +89,6 @@ const STATUS_COLOR: Record<string, string> = {
   cancelled:       'bg-gray-100 text-gray-500',
 };
 
-// Maps tool name to a short prefix shown in the step log
 const STEP_PREFIX: Record<string, string> = {
   list_files:  'ls',
   read_file:   'rd',
@@ -98,6 +107,16 @@ const STEP_COLOR: Record<string, string> = {
   finish:      'text-green-700 font-medium',
 };
 
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
+  if (diffDays === 0) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return d.toLocaleDateString([], { weekday: 'short' });
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function JobCard({
@@ -113,7 +132,6 @@ function JobCard({
   const [err, setErr] = useState<string | null>(null);
   const stepLogRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll the step log as new steps arrive
   useEffect(() => {
     if (stepLogRef.current) {
       stepLogRef.current.scrollTop = stepLogRef.current.scrollHeight;
@@ -164,35 +182,24 @@ function JobCard({
 
   return (
     <div className="mt-2 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-sm">
-      {/* Header row */}
       <div className="mb-2 flex items-center gap-2">
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${badgeClass}`}>
           {job.status}
         </span>
       </div>
-
       <p className="mb-1 italic text-gray-600 line-clamp-2">&quot;{job.instruction}&quot;</p>
-
       <p className="text-gray-500">{STATUS_LABELS[job.status] ?? job.status}</p>
 
-      {/* ── Agent step log (visible while planning, and after if steps exist) ── */}
       {steps.length > 0 && (
         <div className="mt-2 rounded border border-gray-100 bg-gray-50">
           <p className="px-2 pt-1.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400">
             Agent log · {steps.length} step{steps.length !== 1 ? 's' : ''}
           </p>
-          <div
-            ref={stepLogRef}
-            className="max-h-28 overflow-y-auto px-2 pb-1.5 pt-0.5"
-          >
+          <div ref={stepLogRef} className="max-h-28 overflow-y-auto px-2 pb-1.5 pt-0.5">
             {steps.map((step, i) => (
               <div key={i} className="flex items-baseline gap-1.5 py-px font-mono text-[10px]">
-                <span className="w-4 shrink-0 text-gray-300">
-                  {STEP_PREFIX[step.tool] ?? '·'}
-                </span>
-                <span className={STEP_COLOR[step.tool] ?? 'text-gray-500'}>
-                  {step.label}
-                </span>
+                <span className="w-4 shrink-0 text-gray-300">{STEP_PREFIX[step.tool] ?? '·'}</span>
+                <span className={STEP_COLOR[step.tool] ?? 'text-gray-500'}>{step.label}</span>
               </div>
             ))}
             {isPlanning && (
@@ -205,7 +212,6 @@ function JobCard({
         </div>
       )}
 
-      {/* ── Plan summary + confirm (after planning) ── */}
       {job.status === 'planned' && job.plan && (
         <div className="mt-2">
           <p className="mb-1 font-medium text-gray-700">
@@ -254,7 +260,6 @@ function JobCard({
         </div>
       )}
 
-      {/* ── Awaiting merge (repo mode) ── */}
       {job.status === 'awaiting_merge' && (
         <div className="mt-2">
           {job.pr_url && (
@@ -343,7 +348,6 @@ function MessageBubble({
             : 'rounded-bl-sm bg-gray-100 text-gray-900'
         }`}
       >
-        {/* Render line-breaks and preserve code blocks visually */}
         {msg.content.split('\n').map((line, i) => (
           <span key={i}>
             {line}
@@ -358,6 +362,68 @@ function MessageBubble({
   );
 }
 
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+
+function ConversationSidebar({
+  conversations,
+  activeId,
+  onSelect,
+  onNew,
+  loading,
+}: {
+  conversations: ButlerConversationSummary[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="flex w-44 shrink-0 flex-col border-r border-gray-100 bg-gray-50">
+      {/* New chat button */}
+      <div className="p-2">
+        <button
+          onClick={onNew}
+          className="flex w-full items-center gap-1.5 rounded-lg border border-green-200 bg-white px-2 py-1.5 text-xs font-medium text-green-700 shadow-sm hover:bg-green-50 hover:border-green-300 transition-colors"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-3.5 w-3.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          New chat
+        </button>
+      </div>
+
+      {/* Conversation list */}
+      <div className="flex-1 overflow-y-auto">
+        {loading && (
+          <p className="px-2 py-3 text-center text-[10px] text-gray-400">Loading…</p>
+        )}
+        {!loading && conversations.length === 0 && (
+          <p className="px-2 py-3 text-center text-[10px] text-gray-400">No past chats</p>
+        )}
+        {conversations.map((conv) => {
+          const isActive = conv.id === activeId;
+          return (
+            <button
+              key={conv.id}
+              onClick={() => onSelect(conv.id)}
+              className={`w-full px-2 py-2 text-left transition-colors hover:bg-gray-100 ${
+                isActive ? 'bg-green-50 border-r-2 border-green-500' : ''
+              }`}
+            >
+              <p className={`text-[10px] font-medium ${isActive ? 'text-green-700' : 'text-gray-500'}`}>
+                {formatDate(conv.updated_at)}
+              </p>
+              <p className="mt-0.5 line-clamp-2 text-[11px] text-gray-700 leading-tight">
+                {conv.preview ?? <span className="italic text-gray-400">Empty chat</span>}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function ButlerChat() {
@@ -367,44 +433,83 @@ export default function ButlerChat() {
   const [sending, setSending] = useState(false);
   const [connected, setConnected] = useState(false);
 
+  // Sidebar state
+  const [conversations, setConversations] = useState<ButlerConversationSummary[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+
   const wsRef = useRef<ButlerWebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // ── Load chat history on mount ──────────────────────────────────────────
+  // ── Connect WebSocket for a given conversationId ─────────────────────────
 
-  useEffect(() => {
-    getButlerHistory()
-      .then((conv) => {
-        if (conv && conv.messages.length > 0) {
-          setMessages(
-            conv.messages.map((m) => ({
-              id: m.id,
-              kind: 'text' as const,
-              role: m.role === 'user' ? ('user' as const) : ('butler' as const),
-              content: m.content,
-            })),
-          );
-        }
-      })
-      .catch(() => {/* start fresh if fetch fails */});
-  }, []);
-
-  // ── WebSocket lifecycle ──────────────────────────────────────────────────
-
-  useEffect(() => {
-    const ws = new ButlerWebSocket(handleWsEvent);
+  const connectWs = useCallback((conversationId: string | null) => {
+    wsRef.current?.close();
+    const ws = new ButlerWebSocket(handleWsEvent, conversationId);
     wsRef.current = ws;
     ws.connect();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Poll for connection readiness (WebSocket doesn't expose onopen nicely)
+  // ── Load conversation list ───────────────────────────────────────────────
+
+  const refreshConversations = useCallback(async () => {
+    try {
+      const list = await listButlerConversations();
+      setConversations(list);
+      return list;
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // ── Initial setup on mount ───────────────────────────────────────────────
+
+  useEffect(() => {
+    async function init() {
+      setLoadingConversations(true);
+      try {
+        const list = await listButlerConversations();
+        setConversations(list);
+
+        if (list.length > 0) {
+          const latest = list[0];
+          setActiveConversationId(latest.id);
+
+          // Load messages for the latest conversation
+          try {
+            const conv = await getButlerConversation(latest.id);
+            if (conv.messages.length > 0) {
+              setMessages(
+                conv.messages.map((m) => ({
+                  id: m.id,
+                  kind: 'text' as const,
+                  role: m.role === 'user' ? ('user' as const) : ('butler' as const),
+                  content: m.content,
+                })),
+              );
+            }
+          } catch {/* start fresh if fetch fails */}
+
+          connectWs(latest.id);
+        } else {
+          // No conversations yet — connect without an ID (backend creates one on first message)
+          connectWs(null);
+        }
+      } finally {
+        setLoadingConversations(false);
+      }
+    }
+
+    init();
+
     const timer = setInterval(() => {
-      setConnected(ws.isConnected);
+      setConnected(wsRef.current?.isConnected ?? false);
     }, 500);
 
     return () => {
       clearInterval(timer);
-      ws.close();
+      wsRef.current?.close();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -436,7 +541,6 @@ export default function ButlerChat() {
             { ...last, content: last.content + event.content },
           ];
         }
-        // Start a new streaming butler message
         return [
           ...prev,
           { id: uid(), kind: 'text', role: 'butler', content: event.content, streaming: true },
@@ -451,6 +555,12 @@ export default function ButlerChat() {
         return prev;
       });
       setSending(false);
+      // Refresh conversation list to update previews
+      refreshConversations().then((list) => {
+        if (list.length > 0 && !activeConversationId) {
+          setActiveConversationId(list[0].id);
+        }
+      });
     } else if (event.type === 'error') {
       setMessages((prev) => [
         ...prev,
@@ -465,11 +575,7 @@ export default function ButlerChat() {
       ]);
     } else if (event.type === 'modify_started') {
       setMessages((prev) => {
-        // If the job already exists (reconnect scenario), update it and reset
-        // steps — they will be re-sent immediately after by the server.
-        const exists = prev.some(
-          (m) => m.kind === 'job' && m.job.id === event.job.id,
-        );
+        const exists = prev.some((m) => m.kind === 'job' && m.job.id === event.job.id);
         if (exists) {
           return prev.map((m) =>
             m.kind === 'job' && m.job.id === event.job.id
@@ -480,7 +586,6 @@ export default function ButlerChat() {
         return [...prev, { id: uid(), kind: 'job', job: event.job, steps: [] }];
       });
     } else if (event.type === 'modify_step') {
-      // Append the agent step to the matching job message
       setMessages((prev) =>
         prev.map((m) =>
           m.kind === 'job' && m.job.id === event.job_id
@@ -501,6 +606,46 @@ export default function ButlerChat() {
     setMessages((prev) =>
       prev.map((m) => (m.kind === 'job' && m.id === msgId ? { ...m, job: updatedJob } : m)),
     );
+  }
+
+  // ── Switch to a different conversation ───────────────────────────────────
+
+  async function selectConversation(id: string) {
+    if (id === activeConversationId) return;
+    setActiveConversationId(id);
+    setMessages([]);
+    setSending(false);
+
+    try {
+      const conv = await getButlerConversation(id);
+      setMessages(
+        conv.messages.map((m) => ({
+          id: m.id,
+          kind: 'text' as const,
+          role: m.role === 'user' ? ('user' as const) : ('butler' as const),
+          content: m.content,
+        })),
+      );
+    } catch {/* show empty chat on failure */}
+
+    connectWs(id);
+  }
+
+  // ── Start a new conversation ─────────────────────────────────────────────
+
+  async function startNewConversation() {
+    try {
+      const conv = await createButlerConversation();
+      setConversations((prev) => [
+        { id: conv.id, created_at: conv.created_at, updated_at: conv.updated_at, preview: null },
+        ...prev,
+      ]);
+      setActiveConversationId(conv.id);
+      setMessages([]);
+      setSending(false);
+      connectWs(conv.id);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    } catch {/* silently ignore */}
   }
 
   // ── Send message ─────────────────────────────────────────────────────────
@@ -541,9 +686,9 @@ export default function ButlerChat() {
     <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2">
       {/* Chat panel */}
       {open && (
-        <div className="flex h-[520px] w-80 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
+        <div className="flex h-[520px] w-[540px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3">
+          <div className="flex shrink-0 items-center justify-between border-b border-gray-100 bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="text-base">🤵</span>
               <div>
@@ -562,61 +707,76 @@ export default function ButlerChat() {
             </button>
           </div>
 
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto py-3 space-y-2">
-            {messages.length === 0 && (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-gray-400 px-6">
-                <span className="text-3xl">🤵</span>
-                <p className="text-sm font-medium text-gray-600">Hello! I&apos;m your Personal Assistant.</p>
-                <p className="text-xs">
-                  Ask me about usage stats, skills, settings — or ask me to change something
-                  about the platform and I&apos;ll implement it for you.
+          {/* Body: sidebar + chat */}
+          <div className="flex flex-1 overflow-hidden">
+            {/* Sidebar */}
+            <ConversationSidebar
+              conversations={conversations}
+              activeId={activeConversationId}
+              onSelect={selectConversation}
+              onNew={startNewConversation}
+              loading={loadingConversations}
+            />
+
+            {/* Chat area */}
+            <div className="flex flex-1 flex-col overflow-hidden">
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto py-3 space-y-2">
+                {messages.length === 0 && (
+                  <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-gray-400 px-6">
+                    <span className="text-3xl">🤵</span>
+                    <p className="text-sm font-medium text-gray-600">Hello! I&apos;m your Personal Assistant.</p>
+                    <p className="text-xs">
+                      Ask me about usage stats, skills, settings — or ask me to change something
+                      about the platform and I&apos;ll implement it for you.
+                    </p>
+                  </div>
+                )}
+                {messages.map((msg) => (
+                  <MessageBubble key={msg.id} msg={msg} onJobUpdate={handleJobUpdate} />
+                ))}
+                <div ref={bottomRef} />
+              </div>
+
+              {/* Input */}
+              <div className="border-t border-gray-100 p-3">
+                <div className="flex items-end gap-2">
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={onKeyDown}
+                    placeholder="Ask me anything… (Enter to send)"
+                    rows={1}
+                    disabled={sending}
+                    className="flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400 disabled:opacity-60"
+                    style={{ maxHeight: '120px', overflowY: 'auto' }}
+                    onInput={(e) => {
+                      const el = e.currentTarget;
+                      el.style.height = 'auto';
+                      el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+                    }}
+                  />
+                  <button
+                    onClick={send}
+                    disabled={sending || !input.trim()}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:opacity-40"
+                    aria-label="Send"
+                  >
+                    {sending ? (
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <p className="mt-1 text-center text-[10px] text-gray-400">
+                  Shift+Enter for new line
                 </p>
               </div>
-            )}
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} msg={msg} onJobUpdate={handleJobUpdate} />
-            ))}
-            <div ref={bottomRef} />
-          </div>
-
-          {/* Input */}
-          <div className="border-t border-gray-100 p-3">
-            <div className="flex items-end gap-2">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={onKeyDown}
-                placeholder="Ask me anything… (Enter to send)"
-                rows={1}
-                disabled={sending}
-                className="flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400 disabled:opacity-60"
-                style={{ maxHeight: '120px', overflowY: 'auto' }}
-                onInput={(e) => {
-                  const el = e.currentTarget;
-                  el.style.height = 'auto';
-                  el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-                }}
-              />
-              <button
-                onClick={send}
-                disabled={sending || !input.trim()}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:opacity-40"
-                aria-label="Send"
-              >
-                {sending ? (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                ) : (
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
-                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                  </svg>
-                )}
-              </button>
             </div>
-            <p className="mt-1 text-center text-[10px] text-gray-400">
-              Shift+Enter for new line
-            </p>
           </div>
         </div>
       )}

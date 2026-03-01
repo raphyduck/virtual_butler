@@ -194,6 +194,7 @@ async def _create_modify_job(
 @router.websocket("/ws/butler")
 async def websocket_butler(websocket: WebSocket) -> None:
     token = websocket.query_params.get("token")
+    conversation_id = websocket.query_params.get("conversation_id") or None
     user_id = await _authenticate(token)
 
     if user_id is None:
@@ -205,7 +206,7 @@ async def websocket_butler(websocket: WebSocket) -> None:
     async def send(data: dict) -> None:
         await websocket.send_text(json.dumps(data))
 
-    handler = ButlerHandler()
+    handler = ButlerHandler(conversation_id=conversation_id)
     watch_tasks: list[asyncio.Task] = []
 
     # ── Resume active jobs from previous / interrupted sessions ───────────

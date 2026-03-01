@@ -274,8 +274,24 @@ export interface ButlerConversation {
   messages: ButlerMessageOut[];
 }
 
+export interface ButlerConversationSummary {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  preview: string | null;
+}
+
+export const listButlerConversations = (): Promise<ButlerConversationSummary[]> =>
+  request('/butler/conversations');
+
 export const getButlerHistory = (): Promise<ButlerConversation | null> =>
   request('/butler/conversations/latest');
+
+export const getButlerConversation = (id: string): Promise<ButlerConversation> =>
+  request(`/butler/conversations/${id}`);
+
+export const createButlerConversation = (): Promise<ButlerConversation> =>
+  request('/butler/conversations', { method: 'POST' });
 
 // ─── Logs ────────────────────────────────────────────────────────────────────
 

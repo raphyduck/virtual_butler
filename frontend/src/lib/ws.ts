@@ -91,9 +91,11 @@ export class ButlerWebSocket {
   private _reconnectDelay = 1000;
   private _hasConnectedBefore = false;
   private static readonly MAX_RECONNECT_DELAY = 30000;
+  private _conversationId: string | null;
 
-  constructor(onEvent: ButlerWsEventHandler) {
+  constructor(onEvent: ButlerWsEventHandler, conversationId: string | null = null) {
     this.onEvent = onEvent;
+    this._conversationId = conversationId;
   }
 
   connect(): void {
@@ -104,7 +106,10 @@ export class ButlerWebSocket {
     }
 
     const token = getToken();
-    const url = `${WS_BASE}/ws/butler${token ? `?token=${token}` : ''}`;
+    const params = new URLSearchParams();
+    if (token) params.set('token', token);
+    if (this._conversationId) params.set('conversation_id', this._conversationId);
+    const url = `${WS_BASE}/ws/butler?${params}`;
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
