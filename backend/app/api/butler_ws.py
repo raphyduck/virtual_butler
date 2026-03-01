@@ -145,6 +145,8 @@ async def _watch_job(websocket: WebSocket, job_id: uuid.UUID) -> None:
                 if is_done or is_paused:
                     break
 
+    except WebSocketDisconnect:
+        raise
     except Exception:
         pass
     finally:

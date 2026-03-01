@@ -1,5 +1,5 @@
-import { type ButlerJob } from './api';
-import { getToken } from './auth';
+import { type ButlerJob, refreshTokens } from './api';
+import { getToken, getRefreshToken, isTokenValid, setToken, setRefreshToken } from './auth';
 
 const WS_BASE = typeof window !== 'undefined'
   ? (process.env.NEXT_PUBLIC_WS_URL ?? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8000`)
@@ -124,19 +124,48 @@ export class ButlerWebSocket {
       // Error events are followed by close; reconnect is handled in onclose
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (ev) => {
       this.ws = null;
       if (!this._intentionalClose) {
-        this._scheduleReconnect();
+        if (ev.code === 4001) {
+          // Auth rejected — refresh token before reconnecting
+          this._refreshAndReconnect();
+        } else {
+          this._scheduleReconnect();
+        }
       }
     };
+  }
+
+  /** Try to refresh the JWT, then reconnect. Falls back to normal reconnect schedule on failure. */
+  private async _refreshAndReconnect(): Promise<void> {
+    const rt = getRefreshToken();
+    if (rt && isTokenValid(rt)) {
+      try {
+        const data = await refreshTokens(rt);
+        setToken(data.access_token);
+        setRefreshToken(data.refresh_token);
+        this.connect();
+        return;
+      } catch {
+        // refresh failed — fall through
+      }
+    }
+    // Can't refresh — tell the user and stop retrying
+    this.onEvent({ type: 'error', detail: 'Session expired — please log in again' });
   }
 
   private _scheduleReconnect(): void {
     if (this._reconnectTimer) return;
     this._reconnectTimer = setTimeout(() => {
       this._reconnectTimer = null;
-      this.connect();
+      // Before reconnecting, ensure token is still valid; refresh if needed
+      const token = getToken();
+      if (!token || !isTokenValid(token)) {
+        this._refreshAndReconnect();
+      } else {
+        this.connect();
+      }
     }, this._reconnectDelay);
     this._reconnectDelay = Math.min(
       this._reconnectDelay * 2,
