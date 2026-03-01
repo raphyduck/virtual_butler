@@ -307,17 +307,24 @@ class CodeModifier:
         self._run_git(["git", "push", remote_url, f"HEAD:{branch}"])
 
     def git_sync_default_branch(self, token: str, owner: str, repo: str, branch: str = "main") -> None:
-        """Fetch and reset to the latest default branch before starting work."""
+        """Fetch and detach HEAD to the latest default branch before starting work.
+
+        Using --detach means the local branch ref (e.g. 'main') is never moved,
+        so the host user's git pull won't see a diverged branch.
+        """
         remote_url = f"https://{token}@github.com/{owner}/{repo}.git"
         self._run_git(["git", "fetch", remote_url, branch])
-        self._run_git(["git", "checkout", branch])
-        self._run_git(["git", "reset", "--hard", "FETCH_HEAD"])
+        self._run_git(["git", "checkout", "--detach", "FETCH_HEAD"])
 
     def git_pull_default_branch(self, token: str, owner: str, repo: str, branch: str = "main") -> None:
-        """Pull the latest default branch after a PR has been merged."""
+        """Fetch the merged default branch and detach HEAD to it.
+
+        Same detached-HEAD strategy as git_sync_default_branch to avoid
+        diverging the local branch ref that the host user also uses.
+        """
         remote_url = f"https://{token}@github.com/{owner}/{repo}.git"
-        self._run_git(["git", "checkout", branch])
-        self._run_git(["git", "pull", remote_url, branch])
+        self._run_git(["git", "fetch", remote_url, branch])
+        self._run_git(["git", "checkout", "--detach", "FETCH_HEAD"])
 
     # ── Docker build & deploy ─────────────────────────────────────────────────
 
