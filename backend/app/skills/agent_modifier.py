@@ -11,6 +11,8 @@ fully compatible with the existing _bg_apply / CodeModifier.apply() pipeline.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import subprocess
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -19,7 +21,15 @@ from pathlib import Path
 import anthropic
 
 from app.config import settings
+from app.providers.rate_limiter import (
+    BASE_BACKOFF,
+    MAX_BACKOFF,
+    MAX_RETRIES,
+    get_rate_limiter,
+)
 from app.skills.code_modifier import FileChange, ModificationPlan
+
+logger = logging.getLogger(__name__)
 
 # ── Step type ─────────────────────────────────────────────────────────────────
 
@@ -251,6 +261,54 @@ class AgentModifier:
             case _:
                 return f"Unknown tool: {name}", False
 
+    # ── API call with retry ──────────────────────────────────────────────────
+
+    async def _api_call_with_retry(
+        self,
+        limiter,
+        estimated_tokens: int,
+        model: str,
+        messages: list[dict],
+    ):
+        """Make an Anthropic API call with rate limiting and retry on 429."""
+        for attempt in range(MAX_RETRIES + 1):
+            await limiter.acquire(estimated_tokens)
+            try:
+                response = await self._client.messages.create(
+                    model=model,
+                    max_tokens=8096,
+                    system=_SYSTEM,
+                    tools=_TOOLS,
+                    messages=messages,
+                )
+
+                # Update limiter with actual usage
+                if response.usage:
+                    limiter.record_actual_usage(
+                        response.usage.input_tokens, estimated_tokens
+                    )
+
+                return response
+            except anthropic.RateLimitError as exc:
+                if attempt == MAX_RETRIES:
+                    raise
+
+                retry_after = _parse_retry_after(exc)
+                backoff = max(retry_after, BASE_BACKOFF * (2**attempt))
+                backoff = min(backoff, MAX_BACKOFF)
+
+                logger.warning(
+                    "Anthropic 429 in agent loop (attempt %d/%d, iter tokens ~%d), "
+                    "retrying in %.1fs",
+                    attempt + 1,
+                    MAX_RETRIES,
+                    estimated_tokens,
+                    backoff,
+                )
+                await asyncio.sleep(backoff)
+
+        raise RuntimeError("Exhausted retries")
+
     # ── Agent loop ────────────────────────────────────────────────────────────
 
     async def plan(
@@ -271,13 +329,13 @@ class AgentModifier:
             }
         ]
 
-        for _ in range(_MAX_ITER):
-            response = await self._client.messages.create(
-                model=model,
-                max_tokens=8096,
-                system=_SYSTEM,
-                tools=_TOOLS,
-                messages=messages,
+        limiter = await get_rate_limiter()
+
+        for iteration in range(_MAX_ITER):
+            # Estimate tokens and wait for rate limit budget
+            estimated = limiter.estimate_tokens(messages, _SYSTEM)
+            response = await self._api_call_with_retry(
+                limiter, estimated, model, messages
             )
 
             messages.append({"role": "assistant", "content": response.content})
@@ -335,3 +393,15 @@ class AgentModifier:
             raise ValueError("Agent did not plan any file changes.")
 
         return ModificationPlan(changes=planned, commit_message=commit_message)
+
+
+def _parse_retry_after(exc: anthropic.RateLimitError) -> float:
+    """Extract retry-after seconds from the exception's response headers."""
+    try:
+        if exc.response and exc.response.headers:
+            val = exc.response.headers.get("retry-after")
+            if val:
+                return float(val)
+    except (AttributeError, ValueError, TypeError):
+        pass
+    return 0.0
