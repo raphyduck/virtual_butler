@@ -26,6 +26,7 @@ import asyncio
 import json
 import os
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import JWTError
@@ -210,6 +211,7 @@ async def websocket_butler(websocket: WebSocket) -> None:
     # ── Resume active jobs from previous / interrupted sessions ───────────
     try:
         async with AsyncSessionLocal() as db:
+            # Active (non-terminal) jobs — always replay
             result = await db.execute(
                 select(SelfModifyJob)
                 .where(SelfModifyJob.user_id == uuid.UUID(user_id))
@@ -234,6 +236,30 @@ async def websocket_butler(websocket: WebSocket) -> None:
                 if job.status not in _PAUSE:
                     task = asyncio.create_task(_watch_job(websocket, job.id))
                     watch_tasks.append(task)
+
+            # Recently-terminal jobs — replay so the job card is visible after
+            # a reconnect or page reload even if the final event was missed.
+            recent_cutoff = datetime.now(UTC) - timedelta(minutes=10)
+            result2 = await db.execute(
+                select(SelfModifyJob)
+                .where(SelfModifyJob.user_id == uuid.UUID(user_id))
+                .where(SelfModifyJob.status.in_(list(_TERMINAL)))
+                .where(SelfModifyJob.completed_at >= recent_cutoff)
+                .order_by(SelfModifyJob.created_at.asc())
+            )
+            recent_jobs = result2.scalars().all()
+            for job in recent_jobs:
+                await send({"type": "modify_started", "job": _job_dict(job)})
+                if job.steps_json:
+                    for step in json.loads(job.steps_json):
+                        await send(
+                            {
+                                "type": "modify_step",
+                                "job_id": str(job.id),
+                                "step": step,
+                            }
+                        )
+                await send({"type": "modify_done", "job": _job_dict(job)})
     except Exception:
         pass  # best-effort; don't prevent the chat from working
 

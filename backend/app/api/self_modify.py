@@ -38,6 +38,7 @@ from app.auth.github import (
 from app.config import settings
 from app.database import AsyncSessionLocal, get_db
 from app.models.app_setting import get_effective_setting
+from app.models.conversation import ButlerMessage, Conversation
 from app.models.self_modify_job import SelfModifyJob
 from app.models.user import User
 from app.schemas.self_modify import (
@@ -87,6 +88,45 @@ def _job_to_schema(job: SelfModifyJob) -> JobStatusResponse:
         created_at=job.created_at,
         completed_at=job.completed_at,
     )
+
+
+# ── Conversation helper ────────────────────────────────────────────────────────
+
+
+async def _persist_job_terminal_message(job: SelfModifyJob) -> None:
+    """Write an assistant ButlerMessage summarising the terminal job outcome.
+
+    This ensures that page reloads and reconnects always show what happened,
+    even if the WebSocket was closed before the final modify_done event was
+    delivered.
+    """
+    if job.status == "done":
+        text = "✅ Modification applied successfully."
+    elif job.status == "failed":
+        detail = (job.error or "Unknown error")[:300]
+        if len(job.error or "") > 300:
+            detail += "…"
+        text = f"⚠️ Modification failed: {detail}"
+    elif job.status == "cancelled":
+        text = "Modification cancelled."
+    else:
+        return
+
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Conversation)
+                .where(Conversation.user_id == job.user_id)
+                .order_by(Conversation.updated_at.desc())
+                .limit(1)
+            )
+            conv = result.scalar_one_or_none()
+            if conv is None:
+                return
+            db.add(ButlerMessage(conversation_id=conv.id, role="assistant", content=text))
+            await db.commit()
+    except Exception:
+        pass  # best-effort; never block job completion
 
 
 # ── Background tasks ──────────────────────────────────────────────────────────
@@ -173,6 +213,7 @@ async def _bg_plan(job_id: uuid.UUID, github_token: str | None = None) -> None:
             job.error = str(exc)
             job.completed_at = datetime.now(UTC)
             await db.commit()
+            await _persist_job_terminal_message(job)
 
         finally:
             if queue:
@@ -259,6 +300,7 @@ async def _bg_apply(job_id: uuid.UUID, github_token: str, author_email: str) -> 
             job.error = str(exc)
             job.completed_at = datetime.now(UTC)
             await db.commit()
+            await _persist_job_terminal_message(job)
 
 
 async def _bg_merge_and_deploy(job_id: uuid.UUID, github_token: str) -> None:
@@ -325,6 +367,7 @@ async def _bg_merge_and_deploy(job_id: uuid.UUID, github_token: str) -> None:
             job.status = "done"
             job.completed_at = datetime.now(UTC)
             await db.commit()
+            await _persist_job_terminal_message(job)
 
             # This may restart the backend container — fire and forget
             await asyncio.to_thread(modifier.docker_deploy, version)
@@ -334,6 +377,7 @@ async def _bg_merge_and_deploy(job_id: uuid.UUID, github_token: str) -> None:
             job.error = str(exc)
             job.completed_at = datetime.now(UTC)
             await db.commit()
+            await _persist_job_terminal_message(job)
 
 
 # ── GitHub OAuth ──────────────────────────────────────────────────────────────
@@ -505,4 +549,5 @@ async def cancel_modify_job(
     job.completed_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(job)
+    await _persist_job_terminal_message(job)
     return _job_to_schema(job)
