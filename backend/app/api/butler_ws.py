@@ -100,9 +100,9 @@ async def _watch_job(websocket: WebSocket, job_id: uuid.UUID) -> None:
     streaming of the agent's tool calls).  A None sentinel from _bg_plan signals
     that planning is complete.
 
-    Phase 2 — polls the DB every 1.5 s and sends modify_update / modify_done
-    events until the job reaches a terminal state (covers the apply phase after
-    the user confirms).
+    Phase 2 — polls the DB and sends modify_update / modify_done events.
+    Pause states emit modify_done once (so the UI can end the current run),
+    then polling continues at a lower cadence until the user resumes the job.
     """
     queue = job_step_queues.get(str(job_id))
 
@@ -132,18 +132,31 @@ async def _watch_job(websocket: WebSocket, job_id: uuid.UUID) -> None:
                     )
                 )
 
-        # ── Phase 2: poll until terminal ──────────────────────────────────────
+        # ── Phase 2: poll status updates ───────────────────────────────────────
+        last_status: str | None = None
         while True:
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(10.0 if last_status in _PAUSE else 1.5)
             async with AsyncSessionLocal() as db:
                 job = await db.get(SelfModifyJob, job_id)
                 if job is None:
                     break
+<<<<<<< ours
                 should_stop = job.status in _TERMINAL or job.status in _PAUSE
                 event_type = "modify_done" if should_stop else "modify_update"
                 await websocket.send_text(json.dumps({"type": event_type, "job": _job_dict(job)}))
                 if should_stop:
+=======
+                status = job.status
+                if status in _TERMINAL:
+                    await websocket.send_text(json.dumps({"type": "modify_done", "job": _job_dict(job)}))
+>>>>>>> theirs
                     break
+                if status in _PAUSE:
+                    if status != last_status:
+                        await websocket.send_text(json.dumps({"type": "modify_done", "job": _job_dict(job)}))
+                else:
+                    await websocket.send_text(json.dumps({"type": "modify_update", "job": _job_dict(job)}))
+                last_status = status
 
     except WebSocketDisconnect:
         raise
