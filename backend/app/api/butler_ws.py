@@ -29,6 +29,7 @@ import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import JWTError
+from sqlalchemy import select
 
 from app.api.self_modify import _bg_plan, job_step_queues
 from app.auth.jwt import decode_token
@@ -203,6 +204,36 @@ async def websocket_butler(websocket: WebSocket) -> None:
 
     handler = ButlerHandler()
     watch_tasks: list[asyncio.Task] = []
+
+    # ── Resume active jobs from previous / interrupted sessions ───────────
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(SelfModifyJob)
+                .where(SelfModifyJob.user_id == uuid.UUID(user_id))
+                .where(SelfModifyJob.status.notin_(list(_TERMINAL)))
+                .order_by(SelfModifyJob.created_at.asc())
+            )
+            active_jobs = result.scalars().all()
+            for job in active_jobs:
+                await send({"type": "modify_started", "job": _job_dict(job)})
+                # Replay stored agent steps so the client can rebuild the log
+                if job.steps_json:
+                    for step in json.loads(job.steps_json):
+                        await send(
+                            {
+                                "type": "modify_step",
+                                "job_id": str(job.id),
+                                "step": step,
+                            }
+                        )
+                # Start a watcher for jobs that are actively progressing
+                # (skip awaiting_merge — user must click Merge first)
+                if job.status not in _PAUSE:
+                    task = asyncio.create_task(_watch_job(websocket, job.id))
+                    watch_tasks.append(task)
+    except Exception:
+        pass  # best-effort; don't prevent the chat from working
 
     try:
         while True:
