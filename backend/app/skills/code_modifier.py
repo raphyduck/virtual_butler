@@ -271,6 +271,26 @@ class CodeModifier:
 
         return "\n".join(lines)
 
+    def _fix_git_object_permissions(self) -> None:
+        """Make .git/objects world-writable so host and container users can both access it.
+
+        The backend container runs as root, which means any git objects it creates
+        are owned by root and unreadable/unwritable by the host user.  Setting the
+        shared-repository mode to 'world' (equivalent to 'git config core.sharedRepository world')
+        causes git itself to chmod new objects after writing them, keeping the
+        tree accessible to everyone.
+        """
+        try:
+            self._run_git(["git", "config", "core.sharedRepository", "world"], check=False)
+            # Fix ownership of objects already written by root
+            git_objects = self.repo_root / ".git" / "objects"
+            subprocess.run(
+                ["chmod", "-R", "a+rwX", str(git_objects)],
+                capture_output=True,
+            )
+        except Exception:
+            pass  # best-effort; don't block the commit
+
     def git_commit(self, message: str, author_email: str = "butler@virtual-butler.local") -> str:
         """Stage all changes, commit, and return the new HEAD SHA."""
         self._run_git(["git", "config", "user.email", author_email])
@@ -278,6 +298,7 @@ class CodeModifier:
         self._run_git(["git", "add", "-A"])
         self._run_git(["git", "commit", "-m", message])
         result = self._run_git(["git", "rev-parse", "HEAD"])
+        self._fix_git_object_permissions()
         return result.stdout.strip()
 
     def git_push_github(self, token: str, owner: str, repo: str, branch: str = "main") -> None:
