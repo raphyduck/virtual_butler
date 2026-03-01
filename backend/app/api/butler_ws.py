@@ -139,10 +139,10 @@ async def _watch_job(websocket: WebSocket, job_id: uuid.UUID) -> None:
                 job = await db.get(SelfModifyJob, job_id)
                 if job is None:
                     break
-                is_done = job.status in _TERMINAL
-                event_type = "modify_done" if is_done else "modify_update"
+                should_stop = job.status in _TERMINAL or job.status in _PAUSE
+                event_type = "modify_done" if should_stop else "modify_update"
                 await websocket.send_text(json.dumps({"type": event_type, "job": _job_dict(job)}))
-                if is_done:
+                if should_stop:
                     break
 
     except WebSocketDisconnect:
