@@ -495,6 +495,10 @@ export default function ButlerChatFull() {
           // No conversations yet — connect without an ID (backend creates one on first message)
           connectWs(null);
         }
+      } catch {
+        // Backend unreachable (e.g. 502 Bad Gateway) — connect WS anyway so
+        // the user can still chat; the sidebar will just show empty.
+        connectWs(null);
       } finally {
         setLoadingConversations(false);
       }
