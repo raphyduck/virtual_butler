@@ -77,18 +77,38 @@ async def create_github_pr(
     title: str,
     body: str,
 ) -> tuple[str, int]:
-    """Create a pull request and return (html_url, pr_number)."""
+    """Create a pull request and return (html_url, pr_number).
+
+    If a 422 is returned (e.g. a PR already exists for this head→base pair),
+    we fall back to searching for the existing open PR and returning it.
+    """
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
+            headers=headers,
             json={"title": title, "body": body, "head": head, "base": base},
             timeout=15,
         )
+        if resp.status_code == 422:
+            # GitHub returns 422 when a PR already exists for this head→base.
+            # Try to find and return the existing open PR instead of failing.
+            existing = await client.get(
+                f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls",
+                headers=headers,
+                params={"head": f"{owner}:{head}", "base": base, "state": "open"},
+                timeout=15,
+            )
+            if existing.status_code == 200:
+                prs = existing.json()
+                if prs:
+                    return str(prs[0]["html_url"]), int(prs[0]["number"])
+            # No existing PR found — surface the original error
+            resp.raise_for_status()
         resp.raise_for_status()
         data = resp.json()
         return str(data["html_url"]), int(data["number"])
