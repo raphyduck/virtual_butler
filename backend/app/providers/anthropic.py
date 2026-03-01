@@ -40,7 +40,7 @@ class AnthropicProvider(BaseProvider):
         estimated = limiter.estimate_tokens(kwargs["messages"], system_prompt)
 
         for attempt in range(MAX_RETRIES + 1):
-            await limiter.acquire(estimated)
+            entry_id = await limiter.acquire(estimated)
             try:
                 async with self._client.messages.stream(**kwargs) as stream:
                     async for text in stream.text_stream:
@@ -49,11 +49,10 @@ class AnthropicProvider(BaseProvider):
                     # Update with actual usage from response
                     response = await stream.get_final_message()
                     if response and response.usage:
-                        limiter.record_actual_usage(
-                            response.usage.input_tokens, estimated
-                        )
+                        limiter.record_actual_usage(response.usage.input_tokens, entry_id)
                 return  # success
             except anthropic.RateLimitError as exc:
+                limiter.remove_entry(entry_id)
                 if attempt == MAX_RETRIES:
                     raise
 
@@ -68,6 +67,9 @@ class AnthropicProvider(BaseProvider):
                     backoff,
                 )
                 await asyncio.sleep(backoff)
+            except Exception:
+                limiter.remove_entry(entry_id)
+                raise
 
     async def complete(
         self,
@@ -86,18 +88,17 @@ class AnthropicProvider(BaseProvider):
         estimated = limiter.estimate_tokens(kwargs["messages"], system_prompt)
 
         for attempt in range(MAX_RETRIES + 1):
-            await limiter.acquire(estimated)
+            entry_id = await limiter.acquire(estimated)
             try:
                 response = await self._client.messages.create(**kwargs)
 
                 # Update with actual usage
                 if response.usage:
-                    limiter.record_actual_usage(
-                        response.usage.input_tokens, estimated
-                    )
+                    limiter.record_actual_usage(response.usage.input_tokens, entry_id)
 
                 return response.content[0].text
             except anthropic.RateLimitError as exc:
+                limiter.remove_entry(entry_id)
                 if attempt == MAX_RETRIES:
                     raise
 
@@ -112,6 +113,9 @@ class AnthropicProvider(BaseProvider):
                     backoff,
                 )
                 await asyncio.sleep(backoff)
+            except Exception:
+                limiter.remove_entry(entry_id)
+                raise
 
         # Should not reach here, but satisfy type checker
         raise RuntimeError("Exhausted retries")

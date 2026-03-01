@@ -85,7 +85,12 @@ _TOOLS: list[dict] = [
         "description": "Read the full contents of a file relative to the repository root.",
         "input_schema": {
             "type": "object",
-            "properties": {"path": {"type": "string", "description": "Path relative to the repo root"}},
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path relative to the repo root",
+                }
+            },
             "required": ["path"],
         },
     },
@@ -95,7 +100,10 @@ _TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "pattern": {"type": "string", "description": "Basic regex / literal pattern"},
+                "pattern": {
+                    "type": "string",
+                    "description": "Basic regex / literal pattern",
+                },
                 "path": {
                     "type": "string",
                     "description": "Optional subdirectory or file to search in.",
@@ -114,12 +122,18 @@ _TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Path relative to repo root"},
+                "path": {
+                    "type": "string",
+                    "description": "Path relative to repo root",
+                },
                 "old_string": {
                     "type": "string",
                     "description": "Exact string to replace (must occur exactly once in the file)",
                 },
-                "new_string": {"type": "string", "description": "Replacement string"},
+                "new_string": {
+                    "type": "string",
+                    "description": "Replacement string",
+                },
             },
             "required": ["path", "old_string", "new_string"],
         },
@@ -130,7 +144,10 @@ _TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Path relative to repo root"},
+                "path": {
+                    "type": "string",
+                    "description": "Path relative to repo root",
+                },
                 "action": {
                     "type": "string",
                     "enum": ["create", "modify", "delete"],
@@ -244,9 +261,20 @@ class AgentModifier:
             case "read_file":
                 return self._read_file(inp.get("path", "")), False
             case "search_code":
-                return self._search_code(inp.get("pattern", ""), inp.get("path")), False
+                return (
+                    self._search_code(inp.get("pattern", ""), inp.get("path")),
+                    False,
+                )
             case "edit_file":
-                return self._edit_file(inp["path"], inp["old_string"], inp["new_string"], planned), False
+                return (
+                    self._edit_file(
+                        inp["path"],
+                        inp["old_string"],
+                        inp["new_string"],
+                        planned,
+                    ),
+                    False,
+                )
             case "plan_change":
                 planned.append(
                     FileChange(
@@ -272,7 +300,7 @@ class AgentModifier:
     ):
         """Make an Anthropic API call with rate limiting and retry on 429."""
         for attempt in range(MAX_RETRIES + 1):
-            await limiter.acquire(estimated_tokens)
+            entry_id = await limiter.acquire(estimated_tokens)
             try:
                 response = await self._client.messages.create(
                     model=model,
@@ -284,12 +312,11 @@ class AgentModifier:
 
                 # Update limiter with actual usage
                 if response.usage:
-                    limiter.record_actual_usage(
-                        response.usage.input_tokens, estimated_tokens
-                    )
+                    limiter.record_actual_usage(response.usage.input_tokens, entry_id)
 
                 return response
             except anthropic.RateLimitError as exc:
+                limiter.remove_entry(entry_id)
                 if attempt == MAX_RETRIES:
                     raise
 
@@ -298,14 +325,16 @@ class AgentModifier:
                 backoff = min(backoff, MAX_BACKOFF)
 
                 logger.warning(
-                    "Anthropic 429 in agent loop (attempt %d/%d, iter tokens ~%d), "
-                    "retrying in %.1fs",
+                    "Anthropic 429 in agent loop (attempt %d/%d, iter tokens ~%d), retrying in %.1fs",
                     attempt + 1,
                     MAX_RETRIES,
                     estimated_tokens,
                     backoff,
                 )
                 await asyncio.sleep(backoff)
+            except Exception:
+                limiter.remove_entry(entry_id)
+                raise
 
         raise RuntimeError("Exhausted retries")
 
@@ -332,11 +361,17 @@ class AgentModifier:
         limiter = await get_rate_limiter()
 
         for iteration in range(_MAX_ITER):
-            # Estimate tokens and wait for rate limit budget
-            estimated = limiter.estimate_tokens(messages, _SYSTEM)
-            response = await self._api_call_with_retry(
-                limiter, estimated, model, messages
+            # Estimate tokens including tool definitions (crucial for accuracy)
+            estimated = limiter.estimate_tokens(messages, _SYSTEM, tools=_TOOLS)
+
+            logger.info(
+                "Agent loop iteration %d: estimated %d input tokens, %d messages",
+                iteration + 1,
+                estimated,
+                len(messages),
             )
+
+            response = await self._api_call_with_retry(limiter, estimated, model, messages)
 
             messages.append({"role": "assistant", "content": response.content})
 

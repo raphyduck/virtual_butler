@@ -1,9 +1,11 @@
 """Centralized rate limiter for Anthropic API calls.
 
 Prevents 429 errors by:
-1. Tracking token usage per minute and throttling when approaching limits
-2. Automatically retrying on 429 with exponential backoff + retry-after header
-3. Estimating token counts before sending to pre-emptively pause
+1. Tracking *actual* token usage per minute with a sliding window
+2. Pre-emptively pausing when the next request would exceed the budget
+3. Automatically retrying on 429 with exponential backoff + retry-after header
+4. Parsing the actual input_tokens from every API response to keep the window
+   accurate (estimated counts are only used as a fallback)
 
 The limiter is shared across all Anthropic provider instances (module-level
 singleton) so concurrent requests from butler chat, skill sessions, and the
@@ -13,6 +15,7 @@ agent modifier all respect the same budget.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 
@@ -24,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TPM_LIMIT = 30_000  # tokens per minute (org limit from the error)
 DEFAULT_RPM_LIMIT = 50  # requests per minute (Anthropic tier-1 default)
-SAFETY_MARGIN = 0.80  # use at most 80% of the limit before throttling
+SAFETY_MARGIN = 0.75  # use at most 75% of the limit before throttling
 CHARS_PER_TOKEN = 4  # rough estimate for token counting
 
 # Retry settings
@@ -37,6 +40,13 @@ class RateLimiter:
     """Sliding-window rate limiter for API token and request budgets.
 
     All timestamps are in seconds (time.monotonic).
+
+    Key design decisions:
+    - Usage is recorded with *estimated* tokens before the call, then corrected
+      to *actual* tokens once the API responds.  Each entry has a unique id so
+      the correction is reliable even when two requests have the same estimate.
+    - If a request fails (429 or otherwise), its entry is removed so it doesn't
+      consume phantom budget.
     """
 
     def __init__(
@@ -49,19 +59,24 @@ class RateLimiter:
         self._effective_tpm = int(tpm_limit * SAFETY_MARGIN)
         self._effective_rpm = int(rpm_limit * SAFETY_MARGIN)
 
-        # Sliding window entries: list of (timestamp, token_count)
-        self._usage: list[tuple[float, int]] = []
+        # Sliding window entries: list of (timestamp, token_count, entry_id)
+        self._usage: list[tuple[float, int, int]] = []
         self._request_times: list[float] = []
         self._lock = asyncio.Lock()
+        self._next_id = 0
 
     # ── Token estimation ─────────────────────────────────────────────────────
 
     @staticmethod
-    def estimate_tokens(messages: list[dict], system_prompt: str | None = None) -> int:
+    def estimate_tokens(
+        messages: list[dict],
+        system_prompt: str | None = None,
+        tools: list[dict] | None = None,
+    ) -> int:
         """Rough token estimate from message content.
 
         We intentionally over-estimate to stay safe.  Counts characters / 4
-        and adds overhead for message structure.
+        and adds overhead for message structure and tool definitions.
         """
         total_chars = 0
         for msg in messages:
@@ -72,8 +87,8 @@ class RateLimiter:
                 # Tool results, multi-part content
                 for part in content:
                     if isinstance(part, dict):
-                        total_chars += len(str(part.get("content", "")))
-                        total_chars += len(str(part.get("text", "")))
+                        # Serialize dict parts to capture all nested content
+                        total_chars += len(json.dumps(part, default=str))
                     elif isinstance(part, str):
                         total_chars += len(part)
                     else:
@@ -83,7 +98,11 @@ class RateLimiter:
         if system_prompt:
             total_chars += len(system_prompt)
 
-        # Overhead: ~4 tokens per message for role/structure, plus tool defs
+        # Count tool definition tokens (these are sent with every request)
+        if tools:
+            total_chars += len(json.dumps(tools, default=str))
+
+        # Overhead: ~4 tokens per message for role/structure
         overhead = len(messages) * 16 + 200
         return (total_chars // CHARS_PER_TOKEN) + overhead
 
@@ -92,23 +111,26 @@ class RateLimiter:
     def _prune(self, now: float) -> None:
         """Remove entries older than 60 seconds."""
         cutoff = now - 60.0
-        self._usage = [(t, n) for t, n in self._usage if t > cutoff]
+        self._usage = [(t, n, eid) for t, n, eid in self._usage if t > cutoff]
         self._request_times = [t for t in self._request_times if t > cutoff]
 
     def _current_tpm(self) -> int:
-        return sum(n for _, n in self._usage)
+        return sum(n for _, n, _ in self._usage)
 
     def _current_rpm(self) -> int:
         return len(self._request_times)
 
     # ── Public interface ─────────────────────────────────────────────────────
 
-    async def acquire(self, estimated_tokens: int) -> None:
-        """Wait until we have budget for `estimated_tokens`.
+    async def acquire(self, estimated_tokens: int) -> int:
+        """Wait until we have budget for ``estimated_tokens``.
 
         This is called BEFORE making an API request.  If the sliding window
         shows we're close to the limit, we sleep until enough old entries
         expire.
+
+        Returns a unique entry id that can be used with ``record_actual_usage``
+        or ``remove_entry`` to correct/remove the recorded estimate.
         """
         async with self._lock:
             while True:
@@ -123,35 +145,28 @@ class RateLimiter:
 
                 if tokens_ok and requests_ok:
                     # Record this request
-                    self._usage.append((now, estimated_tokens))
+                    entry_id = self._next_id
+                    self._next_id += 1
+                    self._usage.append((now, estimated_tokens, entry_id))
                     self._request_times.append(now)
-                    return
+                    logger.debug(
+                        "Rate limiter: acquired %d tokens (total %d/%d, requests %d/%d, entry=%d)",
+                        estimated_tokens,
+                        tokens_used + estimated_tokens,
+                        self._effective_tpm,
+                        requests_used + 1,
+                        self._effective_rpm,
+                        entry_id,
+                    )
+                    return entry_id
 
                 # Calculate how long to wait
-                wait = 0.0
-                if not tokens_ok and self._usage:
-                    # Wait until enough old tokens expire
-                    needed = (tokens_used + estimated_tokens) - self._effective_tpm
-                    accumulated = 0
-                    for ts, count in self._usage:
-                        accumulated += count
-                        if accumulated >= needed:
-                            wait = max(wait, (ts + 60.0) - now + 0.5)
-                            break
-                    else:
-                        # All entries together aren't enough — wait for full window
-                        wait = max(wait, (self._usage[0][0] + 60.0) - now + 0.5)
-
-                if not requests_ok and self._request_times:
-                    earliest = self._request_times[0]
-                    wait = max(wait, (earliest + 60.0) - now + 0.5)
-
+                wait = self._calculate_wait(tokens_used, estimated_tokens, tokens_ok, requests_ok, now)
                 wait = max(wait, 1.0)  # always wait at least 1s
                 wait = min(wait, 65.0)  # never wait more than ~1 minute
 
                 logger.info(
-                    "Rate limiter: throttling %.1fs (tokens: %d/%d, requests: %d/%d, "
-                    "estimated: %d tokens)",
+                    "Rate limiter: throttling %.1fs (tokens: %d/%d, requests: %d/%d, need: %d tokens)",
                     wait,
                     tokens_used,
                     self._effective_tpm,
@@ -161,29 +176,64 @@ class RateLimiter:
                 )
 
                 # Release lock while sleeping so other coroutines aren't blocked
-                # from checking (they'll see the same state and also sleep)
                 self._lock.release()
                 try:
                     await asyncio.sleep(wait)
                 finally:
                     await self._lock.acquire()
 
-    def record_actual_usage(self, actual_tokens: int, estimated_tokens: int) -> None:
+    def _calculate_wait(
+        self,
+        tokens_used: int,
+        estimated_tokens: int,
+        tokens_ok: bool,
+        requests_ok: bool,
+        now: float,
+    ) -> float:
+        """Determine how long to sleep before retrying acquire."""
+        wait = 0.0
+        if not tokens_ok and self._usage:
+            # Wait until enough old tokens expire
+            needed = (tokens_used + estimated_tokens) - self._effective_tpm
+            accumulated = 0
+            for ts, count, _ in self._usage:
+                accumulated += count
+                if accumulated >= needed:
+                    wait = max(wait, (ts + 60.0) - now + 0.5)
+                    break
+            else:
+                # All entries together aren't enough — wait for full window
+                wait = max(wait, (self._usage[0][0] + 60.0) - now + 0.5)
+
+        if not requests_ok and self._request_times:
+            earliest = self._request_times[0]
+            wait = max(wait, (earliest + 60.0) - now + 0.5)
+
+        return wait
+
+    def record_actual_usage(self, actual_tokens: int, entry_id: int) -> None:
         """Correct the estimate with actual usage from the API response.
 
         Called after we get response headers with actual token counts.
-        Adjusts the most recent entry in the sliding window.
+        Uses the unique entry_id from ``acquire`` for reliable matching.
         """
-        if not self._usage:
-            return
+        for i, (ts, _count, eid) in enumerate(self._usage):
+            if eid == entry_id:
+                self._usage[i] = (ts, actual_tokens, eid)
+                logger.debug(
+                    "Rate limiter: corrected entry %d to %d actual tokens",
+                    entry_id,
+                    actual_tokens,
+                )
+                return
 
-        # Find and update the entry that was recorded with estimated_tokens
-        # (search from the end since it's the most recent)
-        for i in range(len(self._usage) - 1, -1, -1):
-            ts, count = self._usage[i]
-            if count == estimated_tokens:
-                self._usage[i] = (ts, actual_tokens)
-                break
+    def remove_entry(self, entry_id: int) -> None:
+        """Remove a recorded entry (e.g. when a request fails).
+
+        This prevents failed requests from consuming phantom budget.
+        """
+        self._usage = [(t, n, eid) for t, n, eid in self._usage if eid != entry_id]
+        logger.debug("Rate limiter: removed entry %d (request failed)", entry_id)
 
 
 # ── Module-level singleton ───────────────────────────────────────────────────
