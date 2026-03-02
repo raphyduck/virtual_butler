@@ -14,8 +14,14 @@
  *   button out of view.
  */
 
-import React from "react";
-import { PlusIcon, ChatBubbleLeftIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import React, { useEffect, useState } from "react";
+import {
+  PlusIcon,
+  ChatBubbleLeftIcon,
+  XMarkIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+} from "@heroicons/react/24/outline";
 import { useChatStore } from "../store/chatStore";
 import { getSessionTitle, getSessionDateLabel } from "../utils/sessionUtils";
 import type { ChatSession } from "../types/chat";
@@ -34,10 +40,11 @@ interface SidebarProps {
 interface SessionRowProps {
   session: ChatSession;
   isActive: boolean;
+  collapsed: boolean;
   onClick: () => void;
 }
 
-const SessionRow: React.FC<SessionRowProps> = ({ session, isActive, onClick }) => {
+const SessionRow: React.FC<SessionRowProps> = ({ session, isActive, collapsed, onClick }) => {
   const title = getSessionTitle(session);
   const date = getSessionDateLabel(session);
 
@@ -45,8 +52,10 @@ const SessionRow: React.FC<SessionRowProps> = ({ session, isActive, onClick }) =
     <button
       onClick={onClick}
       aria-current={isActive ? "page" : undefined}
+      title={collapsed ? title : undefined}
       className={[
-        "group w-full flex items-start gap-3 rounded-lg px-3 py-2.5 text-left",
+        "group w-full flex rounded-lg px-3 py-2.5 text-left",
+        collapsed ? "justify-center" : "items-start gap-3",
         "transition-colors duration-150 focus-visible:outline-none",
         "focus-visible:ring-2 focus-visible:ring-indigo-500",
         isActive
@@ -64,7 +73,7 @@ const SessionRow: React.FC<SessionRowProps> = ({ session, isActive, onClick }) =
       />
 
       {/* text block */}
-      <span className="min-w-0 flex-1">
+      <span className={["min-w-0 flex-1", collapsed ? "hidden" : "block"].join(" ")}>
         <span
           className={[
             "block truncate text-sm font-medium leading-snug",
@@ -89,6 +98,10 @@ const SessionRow: React.FC<SessionRowProps> = ({ session, isActive, onClick }) =
 // ─── main component ──────────────────────────────────────────────────────────
 
 const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("sidebar_collapsed") === "true";
+  });
   const sessions = useChatStore((s) => s.sessions);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const newSession = useChatStore((s) => s.newSession);
@@ -104,12 +117,19 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
     onMobileClose();
   };
 
+  useEffect(() => {
+    window.localStorage.setItem("sidebar_collapsed", String(collapsed));
+  }, [collapsed]);
+
   // ── inner panel (shared between mobile drawer and desktop sidebar) ──────────
-  const panel = (
+  const renderPanel = (isDesktop: boolean) => {
+    const isCollapsed = isDesktop && collapsed;
+
+    return (
     <div className="flex h-full flex-col bg-white border-r border-gray-200">
       {/* ── header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 pt-5 pb-3">
-        <span className="text-base font-semibold text-gray-900 tracking-tight">
+      <div className={["flex items-center px-4 pt-5 pb-3", isCollapsed ? "justify-center" : "justify-between"].join(" ")}>
+        <span className={["text-base font-semibold text-gray-900 tracking-tight", isCollapsed ? "hidden" : "block"].join(" ")}>
           Conversations
         </span>
 
@@ -128,6 +148,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
       <div className="px-3 pb-3">
         <button
           onClick={handleNewChat}
+          title={isCollapsed ? "New Chat" : undefined}
           className="flex w-full items-center justify-center gap-2 rounded-lg
                      bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white
                      shadow-sm hover:bg-indigo-500 active:bg-indigo-700
@@ -136,7 +157,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
                      focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
         >
           <PlusIcon className="h-4 w-4" aria-hidden="true" />
-          New Chat
+          <span className={isCollapsed ? "hidden" : "block"}>New Chat</span>
         </button>
       </div>
 
@@ -158,6 +179,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
               key={session.id}
               session={session}
               isActive={session.id === activeSessionId}
+              collapsed={isCollapsed}
               onClick={() => handleSelectSession(session.id)}
             />
           ))
@@ -166,21 +188,35 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
 
       {/* ── footer (optional branding / version) ───────────────────────────── */}
       <div className="px-4 py-3 border-t border-gray-100">
-        <p className="text-xs text-gray-400 text-center select-none">
+        <p className={["text-xs text-gray-400 text-center select-none", isCollapsed ? "hidden" : "block"].join(" ")}>
           Personal Assistant
         </p>
       </div>
     </div>
-  );
+    );
+  };
 
   return (
     <>
       {/* ── Desktop sidebar (always visible on md+) ──────────────────────── */}
       <aside
-        className="hidden md:flex md:flex-col md:w-[260px] md:shrink-0 h-full"
+        className={[
+          "relative hidden h-full md:flex md:flex-col md:shrink-0",
+          "transition-[width] duration-300 ease-in-out",
+          collapsed ? "md:w-12" : "md:w-[260px]",
+        ].join(" ")}
         aria-label="Sidebar"
       >
-        {panel}
+        <button
+          type="button"
+          onClick={() => setCollapsed((prev) => !prev)}
+          className="absolute -right-3 top-6 z-10 hidden h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 md:flex"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? <ChevronRightIcon className="h-4 w-4" /> : <ChevronLeftIcon className="h-4 w-4" />}
+        </button>
+        {renderPanel(true)}
       </aside>
 
       {/* ── Mobile drawer overlay ────────────────────────────────────────── */}
@@ -203,7 +239,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
         ].join(" ")}
         aria-label="Sidebar"
       >
-        {panel}
+        {renderPanel(false)}
       </aside>
     </>
   );

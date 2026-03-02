@@ -25,6 +25,13 @@ logger = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"(https?://)([^@]+)(@github\.com)")
 
+
+def _normalize_remote_branch_ref(branch: str) -> str:
+    """Return a fully-qualified remote branch ref for git push."""
+    if branch.startswith("refs/"):
+        return branch
+    return f"refs/heads/{branch}"
+
 # ── Data model ────────────────────────────────────────────────────────────────
 
 
@@ -302,9 +309,10 @@ class CodeModifier:
         return result.stdout.strip()
 
     def git_push_github(self, token: str, owner: str, repo: str, branch: str = "main") -> None:
-        """Push HEAD to GitHub using token auth (credentials never stored in history)."""
+        """Push detached HEAD to a remote branch using token auth."""
         remote_url = f"https://{token}@github.com/{owner}/{repo}.git"
-        self._run_git(["git", "push", remote_url, f"HEAD:{branch}"])
+        remote_ref = _normalize_remote_branch_ref(branch)
+        self._run_git(["git", "push", remote_url, f"HEAD:{remote_ref}"])
 
     def git_sync_default_branch(self, token: str, owner: str, repo: str, branch: str = "main") -> None:
         """Fetch and detach HEAD to the latest default branch before starting work.
