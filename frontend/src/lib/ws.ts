@@ -16,10 +16,28 @@ export type WsEvent =
 
 export type WsEventHandler = (event: WsEvent) => void;
 
+const MAX_RECONNECT_DELAY = 30000;
+
+async function refreshAuthToken(): Promise<boolean> {
+  const rt = getRefreshToken();
+  if (!rt || !isTokenValid(rt)) return false;
+  try {
+    const data = await refreshTokens(rt);
+    setToken(data.access_token);
+    setRefreshToken(data.refresh_token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export class SessionWebSocket {
   private ws: WebSocket | null = null;
   private onEvent: WsEventHandler;
   private sessionId: string;
+  private _intentionalClose = false;
+  private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private _reconnectDelay = 1000;
 
   constructor(sessionId: string, onEvent: WsEventHandler) {
     this.sessionId = sessionId;
@@ -27,9 +45,19 @@ export class SessionWebSocket {
   }
 
   connect(): void {
+    this._intentionalClose = false;
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+
     const token = getToken();
     const url = `${WS_BASE}/ws/session/${this.sessionId}${token ? `?token=${token}` : ''}`;
     this.ws = new WebSocket(url);
+
+    this.ws.onopen = () => {
+      this._reconnectDelay = 1000;
+    };
 
     this.ws.onmessage = (e) => {
       try {
@@ -41,8 +69,40 @@ export class SessionWebSocket {
     };
 
     this.ws.onerror = () => {
-      this.onEvent({ type: 'error', detail: 'WebSocket connection error' });
+      // Error events are followed by close; reconnect is handled in onclose
     };
+
+    this.ws.onclose = (ev) => {
+      this.ws = null;
+      if (this._intentionalClose) return;
+      if (ev.code === 4001) {
+        this._refreshAndReconnect();
+      } else {
+        this._scheduleReconnect();
+      }
+    };
+  }
+
+  private async _refreshAndReconnect(): Promise<void> {
+    if (await refreshAuthToken()) {
+      this.connect();
+      return;
+    }
+    this.onEvent({ type: 'error', detail: 'Session expired — please log in again' });
+  }
+
+  private _scheduleReconnect(): void {
+    if (this._reconnectTimer) return;
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      const token = getToken();
+      if (!token || !isTokenValid(token)) {
+        this._refreshAndReconnect();
+      } else {
+        this.connect();
+      }
+    }, this._reconnectDelay);
+    this._reconnectDelay = Math.min(this._reconnectDelay * 2, MAX_RECONNECT_DELAY);
   }
 
   send(content: string): void {
@@ -54,6 +114,11 @@ export class SessionWebSocket {
   }
 
   close(): void {
+    this._intentionalClose = true;
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
     this.ws?.close();
     this.ws = null;
   }
@@ -90,7 +155,6 @@ export class ButlerWebSocket {
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _reconnectDelay = 1000;
   private _hasConnectedBefore = false;
-  private static readonly MAX_RECONNECT_DELAY = 30000;
   private _conversationId: string | null;
 
   constructor(onEvent: ButlerWsEventHandler, conversationId: string | null = null) {
@@ -148,17 +212,9 @@ export class ButlerWebSocket {
 
   /** Try to refresh the JWT, then reconnect. Falls back to normal reconnect schedule on failure. */
   private async _refreshAndReconnect(): Promise<void> {
-    const rt = getRefreshToken();
-    if (rt && isTokenValid(rt)) {
-      try {
-        const data = await refreshTokens(rt);
-        setToken(data.access_token);
-        setRefreshToken(data.refresh_token);
-        this.connect();
-        return;
-      } catch {
-        // refresh failed — fall through
-      }
+    if (await refreshAuthToken()) {
+      this.connect();
+      return;
     }
     // Can't refresh — tell the user and stop retrying
     this.onEvent({ type: 'error', detail: 'Session expired — please log in again' });
@@ -178,7 +234,7 @@ export class ButlerWebSocket {
     }, this._reconnectDelay);
     this._reconnectDelay = Math.min(
       this._reconnectDelay * 2,
-      ButlerWebSocket.MAX_RECONNECT_DELAY,
+      MAX_RECONNECT_DELAY,
     );
   }
 
