@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { type ChatMessage as ApiMessage, getMessages } from '@/lib/api';
-import { SessionWebSocket } from '@/lib/ws';
+import { SessionWebSocket, type WsEvent } from '@/lib/ws';
 import clsx from 'clsx';
 
 interface Props {
@@ -38,7 +38,7 @@ export default function ChatWindow({ sessionId, skillId }: Props) {
       )
       .catch(() => {/* start fresh */});
 
-    const ws = new SessionWebSocket(sessionId, (evt) => {
+    const ws = new SessionWebSocket(sessionId, (evt: WsEvent) => {
       if (evt.type === 'chunk') {
         setMessages((prev) => {
           const last = prev[prev.length - 1];
@@ -58,16 +58,17 @@ export default function ChatWindow({ sessionId, skillId }: Props) {
       } else if (evt.type === 'error') {
         setError(evt.detail);
         setBusy(false);
+      } else if (evt.type === 'connected' || evt.type === 'reconnected') {
+        setConnected(true);
+      } else if (evt.type === 'disconnected') {
+        setConnected(false);
       }
     });
 
     ws.connect();
     wsRef.current = ws;
-    // Mark as connected after a tick (WebSocket.open fires async)
-    const timer = setTimeout(() => setConnected(true), 300);
 
     return () => {
-      clearTimeout(timer);
       ws.close();
     };
   }, [sessionId, skillId]);
@@ -80,6 +81,12 @@ export default function ChatWindow({ sessionId, skillId }: Props) {
   function send() {
     const text = input.trim();
     if (!text || busy) return;
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      setError('You are currently disconnected. Please wait while we reconnect.');
+      setConnected(false);
+      return;
+    }
+
     setError(null);
     setInput('');
     setBusy(true);
@@ -87,7 +94,7 @@ export default function ChatWindow({ sessionId, skillId }: Props) {
       ...prev,
       { id: `user-${Date.now()}`, role: 'user', content: text },
     ]);
-    wsRef.current?.send(text);
+    wsRef.current.send(text);
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {

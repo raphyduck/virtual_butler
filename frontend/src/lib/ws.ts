@@ -12,7 +12,10 @@ const WS_BASE = typeof window !== 'undefined'
 export type WsEvent =
   | { type: 'chunk'; content: string }
   | { type: 'done' }
-  | { type: 'error'; detail: string };
+  | { type: 'error'; detail: string }
+  | { type: 'connected' }
+  | { type: 'disconnected' }
+  | { type: 'reconnected' };
 
 export type WsEventHandler = (event: WsEvent) => void;
 
@@ -38,6 +41,7 @@ export class SessionWebSocket {
   private _intentionalClose = false;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _reconnectDelay = 1000;
+  private _hasConnectedBefore = false;
 
   constructor(sessionId: string, onEvent: WsEventHandler) {
     this.sessionId = sessionId;
@@ -57,6 +61,8 @@ export class SessionWebSocket {
 
     this.ws.onopen = () => {
       this._reconnectDelay = 1000;
+      this.onEvent({ type: this._hasConnectedBefore ? 'reconnected' : 'connected' });
+      this._hasConnectedBefore = true;
     };
 
     this.ws.onmessage = (e) => {
@@ -74,6 +80,7 @@ export class SessionWebSocket {
 
     this.ws.onclose = (ev) => {
       this.ws = null;
+      this.onEvent({ type: 'disconnected' });
       if (this._intentionalClose) return;
       if (ev.code === 4001) {
         this._refreshAndReconnect();
@@ -140,6 +147,8 @@ export type ButlerWsEvent =
   | { type: 'chunk'; content: string }
   | { type: 'done' }
   | { type: 'error'; detail: string }
+  | { type: 'connected' }
+  | { type: 'disconnected' }
   | { type: 'modify_started'; job: ButlerJob }
   | { type: 'modify_step'; job_id: string; step: AgentStep }
   | { type: 'modify_update'; job: ButlerJob }
@@ -178,9 +187,7 @@ export class ButlerWebSocket {
 
     this.ws.onopen = () => {
       this._reconnectDelay = 1000;
-      if (this._hasConnectedBefore) {
-        this.onEvent({ type: 'reconnected' });
-      }
+      this.onEvent({ type: this._hasConnectedBefore ? 'reconnected' : 'connected' });
       this._hasConnectedBefore = true;
     };
 
@@ -199,6 +206,7 @@ export class ButlerWebSocket {
 
     this.ws.onclose = (ev) => {
       this.ws = null;
+      this.onEvent({ type: 'disconnected' });
       if (!this._intentionalClose) {
         if (ev.code === 4001) {
           // Auth rejected — refresh token before reconnecting
@@ -254,6 +262,10 @@ export class ButlerWebSocket {
     }
     this.ws?.close();
     this.ws = null;
+  }
+
+  get readyState(): number {
+    return this.ws?.readyState ?? WebSocket.CLOSED;
   }
 
   get isConnected(): boolean {

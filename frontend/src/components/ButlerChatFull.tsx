@@ -446,6 +446,7 @@ export default function ButlerChatFull() {
 
   const connectWs = useCallback((conversationId: string | null) => {
     wsRef.current?.close();
+    setConnected(false);
     const ws = new ButlerWebSocket(handleWsEvent, conversationId);
     wsRef.current = ws;
     ws.connect();
@@ -502,12 +503,7 @@ export default function ButlerChatFull() {
 
     init();
 
-    const timer = setInterval(() => {
-      setConnected(wsRef.current?.isConnected ?? false);
-    }, 500);
-
     return () => {
-      clearInterval(timer);
       wsRef.current?.close();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -556,7 +552,12 @@ export default function ButlerChatFull() {
         { id: uid(), kind: 'text', role: 'system', content: event.detail },
       ]);
       setSending(false);
+    } else if (event.type === 'connected') {
+      setConnected(true);
+    } else if (event.type === 'disconnected') {
+      setConnected(false);
     } else if (event.type === 'reconnected') {
+      setConnected(true);
       setSending(false);
       setMessages((prev) => [
         ...prev,
@@ -650,7 +651,8 @@ export default function ButlerChatFull() {
     setInput('');
     setSending(true);
 
-    if (!wsRef.current?.isConnected) {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      setConnected(false);
       setMessages((prev) => [
         ...prev,
         { id: uid(), kind: 'text', role: 'system', content: 'Not connected — reconnecting automatically…' },
