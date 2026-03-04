@@ -150,6 +150,7 @@ export type ButlerWsEvent =
   | { type: 'connected' }
   | { type: 'disconnected' }
   | { type: 'modify_started'; job: ButlerJob }
+  | { type: 'modify_snapshot'; job: ButlerJob }
   | { type: 'modify_step'; job_id: string; step: AgentStep }
   | { type: 'modify_update'; job: ButlerJob }
   | { type: 'modify_done'; job: ButlerJob }

@@ -12,6 +12,7 @@ Server → Client:
     {"type": "done"}
     {"type": "error",          "detail": "<error message>"}
     {"type": "modify_started", "job": {...}}
+    {"type": "modify_snapshot","job": {...}}
     {"type": "modify_step",    "job_id": "<uuid>", "step": {"tool": "...", "label": "...", "status": "ok"}}
     {"type": "modify_update",  "job": {...}}
     {"type": "modify_done",    "job": {...}}
@@ -226,7 +227,7 @@ async def websocket_butler(websocket: WebSocket) -> None:
             )
             active_jobs = result.scalars().all()
             for job in active_jobs:
-                await send({"type": "modify_started", "job": _job_dict(job)})
+                await send({"type": "modify_snapshot", "job": _job_dict(job)})
                 # Replay stored agent steps so the client can rebuild the log
                 if job.steps_json:
                     for step in json.loads(job.steps_json):
@@ -254,7 +255,7 @@ async def websocket_butler(websocket: WebSocket) -> None:
             )
             recent_jobs = result2.scalars().all()
             for job in recent_jobs:
-                await send({"type": "modify_started", "job": _job_dict(job)})
+                await send({"type": "modify_snapshot", "job": _job_dict(job)})
                 if job.steps_json:
                     for step in json.loads(job.steps_json):
                         await send(

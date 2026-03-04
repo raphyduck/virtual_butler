@@ -77,11 +77,16 @@ export function useButlerChat() {
       return;
     }
 
-    if (event.type === 'modify_started') {
+    if (event.type === 'modify_started' || event.type === 'modify_snapshot') {
       setMessages((prev) => {
+        const resetSteps = event.type === 'modify_started';
         const exists = prev.some((m) => m.kind === 'job' && m.job.id === event.job.id);
         if (exists) {
-          return prev.map((m) => (m.kind === 'job' && m.job.id === event.job.id ? { ...m, job: event.job, steps: [] } : m));
+          return prev.map((m) => (
+            m.kind === 'job' && m.job.id === event.job.id
+              ? { ...m, job: event.job, ...(resetSteps ? { steps: [] } : {}) }
+              : m
+          ));
         }
         return [...prev, { id: uid(), kind: 'job', job: event.job, steps: [] }];
       });
