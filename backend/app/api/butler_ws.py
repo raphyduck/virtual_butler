@@ -25,6 +25,7 @@ via the REST endpoints  POST /self/modify/{id}/confirm  |  /cancel .
 
 import asyncio
 import json
+import logging
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -42,6 +43,7 @@ from app.models.user import User
 from app.skills.butler_handler import ButlerHandler
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _TERMINAL = frozenset({"done", "failed", "cancelled"})
 # States where the watcher should stop polling (user action required)
@@ -69,11 +71,14 @@ async def _authenticate(token: str | None) -> str | None:
 def _job_dict(job: SelfModifyJob) -> dict:
     plan = None
     if job.plan_json:
-        raw = json.loads(job.plan_json)
-        plan = {
-            "commit_message": raw.get("commit_message", ""),
-            "changes": [{"path": c["path"], "action": c["action"]} for c in raw.get("changes", [])],
-        }
+        try:
+            raw = json.loads(job.plan_json)
+            plan = {
+                "commit_message": raw.get("commit_message", ""),
+                "changes": [{"path": c["path"], "action": c["action"]} for c in raw.get("changes", [])],
+            }
+        except Exception:
+            logger.exception("Invalid plan_json while serializing self-modify job", extra={"job_id": str(job.id)})
     return {
         "id": str(job.id),
         "status": job.status,
@@ -215,6 +220,37 @@ async def websocket_butler(websocket: WebSocket) -> None:
     handler = ButlerHandler(conversation_id=conversation_id)
     watch_tasks: list[asyncio.Task] = []
 
+    async def _replay_steps(job: SelfModifyJob) -> None:
+        if not job.steps_json:
+            return
+        try:
+            steps = json.loads(job.steps_json)
+        except Exception:
+            logger.exception("Invalid steps_json while replaying self-modify job", extra={"job_id": str(job.id)})
+            return
+
+        if not isinstance(steps, list):
+            logger.error(
+                "Invalid steps_json payload type while replaying self-modify job",
+                extra={"job_id": str(job.id), "steps_type": type(steps).__name__},
+            )
+            return
+
+        for step in steps:
+            if not isinstance(step, dict):
+                logger.error(
+                    "Ignoring invalid replay step payload",
+                    extra={"job_id": str(job.id), "step_type": type(step).__name__},
+                )
+                continue
+            await send(
+                {
+                    "type": "modify_step",
+                    "job_id": str(job.id),
+                    "step": step,
+                }
+            )
+
     # ── Resume active jobs from previous / interrupted sessions ───────────
     try:
         async with AsyncSessionLocal() as db:
@@ -227,21 +263,15 @@ async def websocket_butler(websocket: WebSocket) -> None:
             )
             active_jobs = result.scalars().all()
             for job in active_jobs:
-                await send({"type": "modify_snapshot", "job": _job_dict(job)})
-                # Replay stored agent steps so the client can rebuild the log
-                if job.steps_json:
-                    for step in json.loads(job.steps_json):
-                        await send(
-                            {
-                                "type": "modify_step",
-                                "job_id": str(job.id),
-                                "step": step,
-                            }
-                        )
-                # Start a watcher so the client is notified when the job
-                # reaches a terminal state (covers the merge+deploy phase too).
-                task = asyncio.create_task(_watch_job(websocket, job.id))
-                watch_tasks.append(task)
+                try:
+                    await send({"type": "modify_snapshot", "job": _job_dict(job)})
+                    await _replay_steps(job)
+                    # Start a watcher so the client is notified when the job
+                    # reaches a terminal state (covers the merge+deploy phase too).
+                    task = asyncio.create_task(_watch_job(websocket, job.id))
+                    watch_tasks.append(task)
+                except Exception:
+                    logger.exception("Failed to resume active self-modify job", extra={"job_id": str(job.id)})
 
             # Recently-terminal jobs — replay so the job card is visible after
             # a reconnect or page reload even if the final event was missed.
@@ -255,19 +285,15 @@ async def websocket_butler(websocket: WebSocket) -> None:
             )
             recent_jobs = result2.scalars().all()
             for job in recent_jobs:
-                await send({"type": "modify_snapshot", "job": _job_dict(job)})
-                if job.steps_json:
-                    for step in json.loads(job.steps_json):
-                        await send(
-                            {
-                                "type": "modify_step",
-                                "job_id": str(job.id),
-                                "step": step,
-                            }
-                        )
-                await send({"type": "modify_done", "job": _job_dict(job)})
+                try:
+                    await send({"type": "modify_snapshot", "job": _job_dict(job)})
+                    await _replay_steps(job)
+                except Exception:
+                    logger.exception("Failed to replay terminal self-modify job", extra={"job_id": str(job.id)})
+                finally:
+                    await send({"type": "modify_done", "job": _job_dict(job)})
     except Exception:
-        pass  # best-effort; don't prevent the chat from working
+        logger.exception("Failed to resume self-modify jobs on websocket connect", extra={"user_id": user_id})
 
     try:
         while True:
