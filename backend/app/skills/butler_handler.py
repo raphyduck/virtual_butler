@@ -157,6 +157,10 @@ class ButlerHandler:
         action, self._pending_action = self._pending_action, None
         return action
 
+    def conversation_id(self) -> uuid.UUID | None:
+        """Return the currently resolved conversation id (if initialized)."""
+        return self._conversation_id
+
     async def _ensure_conversation(self, db: AsyncSession, user_id: str) -> uuid.UUID:
         """Load the target conversation (or the latest one) and populate history.
 

@@ -173,11 +173,13 @@ async def _create_modify_job(
     instruction: str,
     provider: str,
     model: str,
+    conversation_id: uuid.UUID | None = None,
     github_token: str | None = None,
 ) -> tuple[uuid.UUID, dict]:
     async with AsyncSessionLocal() as db:
         job = SelfModifyJob(
             user_id=uuid.UUID(user_id),
+            conversation_id=conversation_id,
             mode="repo",
             instruction=instruction,
             provider=provider,
@@ -341,6 +343,7 @@ async def websocket_butler(websocket: WebSocket) -> None:
                         instruction=action.get("instruction", ""),
                         provider=butler_provider,
                         model=butler_model,
+                        conversation_id=handler.conversation_id(),
                         github_token=gh_token,
                     )
                     await send({"type": "modify_started", "job": job_dict})
