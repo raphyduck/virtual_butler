@@ -4,6 +4,7 @@ import {
   type ButlerConversationSummary,
   type ButlerJob,
   createButlerConversation,
+  getAppSettings,
   getButlerConversation,
   listButlerConversations,
   updateAppSettings,
@@ -28,8 +29,13 @@ export function useButlerChat() {
   const [conversations, setConversations] = useState<ButlerConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(false);
+<<<<<<< ours
   const [selectedProvider, setSelectedProvider] = useState('anthropic');
   const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
+=======
+  const [sessionProvider, setSessionProvider] = useState<string | null>(null);
+  const [sessionModel, setSessionModel] = useState<string | null>(null);
+>>>>>>> theirs
 
   const wsRef = useRef<ButlerWebSocket | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -127,19 +133,33 @@ export function useButlerChat() {
     async function init() {
       setLoadingConversations(true);
       try {
+<<<<<<< ours
         const [list, settings] = await Promise.all([
           listButlerConversations(),
           getAppSettings().catch(() => null),
         ]);
+=======
+        try {
+          const settings = await getAppSettings();
+          setSessionProvider(settings.butler_provider);
+          setSessionModel(settings.butler_model);
+        } catch {}
+
+        const list = await listButlerConversations();
+>>>>>>> theirs
         setConversations(list);
         if (settings?.butler_provider) setSelectedProvider(settings.butler_provider);
         if (settings?.butler_model) setSelectedModel(settings.butler_model);
         if (list.length > 0) {
           const latest = list[0];
           setActiveConversationId(latest.id);
+          setSessionProvider(latest.provider);
+          setSessionModel(latest.model);
           try {
             const conversation = await getButlerConversation(latest.id);
             setMessages(toChatMessages(conversation.messages));
+            setSessionProvider(conversation.provider);
+            setSessionModel(conversation.model);
           } catch {}
           connectWs(latest.id);
           return;
@@ -162,26 +182,32 @@ export function useButlerChat() {
     try {
       const conversation = await getButlerConversation(id);
       setMessages(toChatMessages(conversation.messages));
+      setSessionProvider(conversation.provider);
+      setSessionModel(conversation.model);
     } catch {}
     connectWs(id);
   }, [activeConversationId, connectWs]);
 
   const startNewConversation = useCallback(async () => {
     try {
-      const conversation = await createButlerConversation();
+      const conversation = await createButlerConversation({ provider: sessionProvider, model: sessionModel });
       setConversations((prev) => [{
         id: conversation.id,
         created_at: conversation.created_at,
         updated_at: conversation.updated_at,
+        provider: conversation.provider,
+        model: conversation.model,
         preview: null,
       }, ...prev]);
       setActiveConversationId(conversation.id);
+      setSessionProvider(conversation.provider);
+      setSessionModel(conversation.model);
       setMessages([]);
       setSending(false);
       connectWs(conversation.id);
       setTimeout(() => inputRef.current?.focus(), 50);
     } catch {}
-  }, [connectWs]);
+  }, [connectWs, sessionModel, sessionProvider]);
 
   const updateJobMessage = useCallback((msgId: string, updatedJob: ButlerJob) => {
     setMessages((prev) => prev.map((m) => (m.kind === 'job' && m.id === msgId ? { ...m, job: updatedJob } : m)));
@@ -241,8 +267,13 @@ export function useButlerChat() {
     selectConversation,
     send,
     sending,
+<<<<<<< ours
     selectedModel,
     selectedProvider,
+=======
+    sessionModel,
+    sessionProvider,
+>>>>>>> theirs
     setInput,
     setModel,
     setProvider,

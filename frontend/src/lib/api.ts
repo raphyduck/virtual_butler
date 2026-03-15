@@ -271,6 +271,8 @@ export interface ButlerConversation {
   id: string;
   created_at: string;
   updated_at: string;
+  provider: string | null;
+  model: string | null;
   messages: ButlerMessageOut[];
 }
 
@@ -278,6 +280,8 @@ export interface ButlerConversationSummary {
   id: string;
   created_at: string;
   updated_at: string;
+  provider: string | null;
+  model: string | null;
   preview: string | null;
 }
 
@@ -290,8 +294,8 @@ export const getButlerHistory = (): Promise<ButlerConversation | null> =>
 export const getButlerConversation = (id: string): Promise<ButlerConversation> =>
   request(`/butler/conversations/${id}`);
 
-export const createButlerConversation = (): Promise<ButlerConversation> =>
-  request('/butler/conversations', { method: 'POST' });
+export const createButlerConversation = (data?: { provider?: string | null; model?: string | null }): Promise<ButlerConversation> =>
+  request('/butler/conversations', { method: 'POST', body: JSON.stringify(data ?? {}) });
 
 // ─── Logs ────────────────────────────────────────────────────────────────────
 

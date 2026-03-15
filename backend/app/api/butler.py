@@ -6,9 +6,10 @@ GET  /butler/conversations/{id}      — get a specific conversation with messag
 POST /butler/conversations           — create a new empty conversation
 """
 
+import os
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db
+from app.models.app_setting import get_effective_setting
 from app.models.conversation import Conversation
 from app.models.user import User
 
@@ -33,6 +35,8 @@ class ConversationOut(BaseModel):
     id: str
     created_at: str
     updated_at: str
+    provider: str | None
+    model: str | None
     messages: list[ButlerMessageOut]
 
 
@@ -40,7 +44,14 @@ class ConversationSummaryOut(BaseModel):
     id: str
     created_at: str
     updated_at: str
+    provider: str | None
+    model: str | None
     preview: str | None  # First message content, truncated to 100 chars
+
+
+class ConversationCreateIn(BaseModel):
+    provider: str | None = None
+    model: str | None = None
 
 
 def _conv_out(conv: Conversation) -> ConversationOut:
@@ -48,6 +59,8 @@ def _conv_out(conv: Conversation) -> ConversationOut:
         id=str(conv.id),
         created_at=conv.created_at.isoformat(),
         updated_at=conv.updated_at.isoformat(),
+        provider=conv.provider,
+        model=conv.model,
         messages=[
             ButlerMessageOut(
                 id=str(m.id),
@@ -78,6 +91,8 @@ async def list_conversations(
             id=str(conv.id),
             created_at=conv.created_at.isoformat(),
             updated_at=conv.updated_at.isoformat(),
+            provider=conv.provider,
+            model=conv.model,
             preview=(conv.butler_messages[0].content[:100] if conv.butler_messages else None),
         )
         for conv in conversations
@@ -86,11 +101,18 @@ async def list_conversations(
 
 @router.post("/conversations", response_model=ConversationOut)
 async def create_conversation(
+    body: ConversationCreateIn = Body(default_factory=ConversationCreateIn),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new empty conversation and return it."""
-    conv = Conversation(user_id=user.id)
+    provider = body.provider or (
+        await get_effective_setting(db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic"))
+    )
+    model = body.model or (
+        await get_effective_setting(db, "butler_model", os.getenv("BUTLER_MODEL", "claude-sonnet-4-6"))
+    )
+    conv = Conversation(user_id=user.id, provider=provider, model=model)
     db.add(conv)
     await db.commit()
     await db.refresh(conv)
@@ -98,6 +120,8 @@ async def create_conversation(
         id=str(conv.id),
         created_at=conv.created_at.isoformat(),
         updated_at=conv.updated_at.isoformat(),
+        provider=conv.provider,
+        model=conv.model,
         messages=[],
     )
 
@@ -142,4 +166,5 @@ async def get_conversation(
     conv = result.scalar_one_or_none()
     if conv is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
     return _conv_out(conv)

@@ -86,6 +86,8 @@ class ButlerHandler:
         self._pending_action: dict | None = None
         self._conversation_id: uuid.UUID | None = uuid.UUID(conversation_id) if conversation_id else None
         self._initialized = False  # True once history has been loaded from DB
+        self._conversation_provider: str | None = None
+        self._conversation_model: str | None = None
 
     # ── Context helpers ────────────────────────────────────────────────────────
 
@@ -133,8 +135,12 @@ class ButlerHandler:
         return "\n".join(lines)
 
     async def _resolve_provider(self, db: AsyncSession):
-        provider_name = await get_effective_setting(db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic"))
-        model = await get_effective_setting(db, "butler_model", os.getenv("BUTLER_MODEL", "claude-sonnet-4-6"))
+        provider_name = self._conversation_provider or (
+            await get_effective_setting(db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic"))
+        )
+        model = self._conversation_model or (
+            await get_effective_setting(db, "butler_model", os.getenv("BUTLER_MODEL", "claude-sonnet-4-6"))
+        )
 
         # Resolve API key from DB, falling back to env
         key_map = {
@@ -161,6 +167,9 @@ class ButlerHandler:
         """Return the currently resolved conversation id (if initialized)."""
         return self._conversation_id
 
+    def conversation_provider_model(self) -> tuple[str | None, str | None]:
+        return self._conversation_provider, self._conversation_model
+
     async def _ensure_conversation(self, db: AsyncSession, user_id: str) -> uuid.UUID:
         """Load the target conversation (or the latest one) and populate history.
 
@@ -183,6 +192,8 @@ class ButlerHandler:
             conv = result.scalar_one_or_none()
             if conv is not None:
                 self._history = [ChatMessage(role=m.role, content=m.content) for m in conv.butler_messages]
+                self._conversation_provider = conv.provider
+                self._conversation_model = conv.model
                 self._initialized = True
                 return conv.id
             # Conversation not found / doesn't belong to this user — fall through
@@ -200,14 +211,20 @@ class ButlerHandler:
         if conv is not None:
             self._history = [ChatMessage(role=m.role, content=m.content) for m in conv.butler_messages]
             self._conversation_id = conv.id
+            self._conversation_provider = conv.provider
+            self._conversation_model = conv.model
             self._initialized = True
             return conv.id
 
         # No previous conversation — create a fresh one
-        conv = Conversation(user_id=uuid.UUID(user_id))
+        provider = await get_effective_setting(db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic"))
+        model = await get_effective_setting(db, "butler_model", os.getenv("BUTLER_MODEL", "claude-sonnet-4-6"))
+        conv = Conversation(user_id=uuid.UUID(user_id), provider=provider, model=model)
         db.add(conv)
         await db.flush()
         self._conversation_id = conv.id
+        self._conversation_provider = conv.provider
+        self._conversation_model = conv.model
         self._initialized = True
         return conv.id
 

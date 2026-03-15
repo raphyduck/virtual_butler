@@ -309,16 +309,6 @@ async def websocket_butler(websocket: WebSocket) -> None:
 
             # Stream the butler response and handle any modification action
             async with AsyncSessionLocal() as db:
-                # Resolve butler provider/model up-front (used for modify jobs)
-                butler_provider = (
-                    await get_effective_setting(db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic"))
-                    or "anthropic"
-                )
-                butler_model = (
-                    await get_effective_setting(db, "butler_model", os.getenv("BUTLER_MODEL", "claude-sonnet-4-6"))
-                    or "claude-sonnet-4-6"
-                )
-
                 try:
                     async for chunk in handler.run(db, user_id, user_message):
                         await send({"type": "chunk", "content": chunk})
@@ -338,11 +328,19 @@ async def websocket_butler(websocket: WebSocket) -> None:
                         if user:
                             gh_token = user.github_access_token
 
+                    conv_provider, conv_model = handler.conversation_provider_model()
+                    provider = conv_provider or (
+                        await get_effective_setting(db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic"))
+                    )
+                    model = conv_model or (
+                        await get_effective_setting(db, "butler_model", os.getenv("BUTLER_MODEL", "claude-sonnet-4-6"))
+                    )
+
                     job_id, job_dict = await _create_modify_job(
                         user_id=user_id,
                         instruction=action.get("instruction", ""),
-                        provider=butler_provider,
-                        model=butler_model,
+                        provider=provider,
+                        model=model,
                         conversation_id=handler.conversation_id(),
                         github_token=gh_token,
                     )
