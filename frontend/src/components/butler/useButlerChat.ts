@@ -1,14 +1,24 @@
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 import {
+  getAppSettings,
   type ButlerConversationSummary,
   type ButlerJob,
   createButlerConversation,
   getButlerConversation,
   listButlerConversations,
+  updateAppSettings,
 } from '@/lib/api';
 import { ButlerWebSocket, type ButlerWsEvent } from '@/lib/ws';
 import { toChatMessages, uid } from './constants';
 import type { ChatMessage } from './types';
+
+
+const DEFAULT_MODELS: Record<string, string> = {
+  anthropic: 'claude-sonnet-4-6',
+  openai: 'gpt-5',
+  google: 'gemini-2.5-pro',
+  ollama: 'llama3.1',
+};
 
 export function useButlerChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -18,6 +28,8 @@ export function useButlerChat() {
   const [conversations, setConversations] = useState<ButlerConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState('anthropic');
+  const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
 
   const wsRef = useRef<ButlerWebSocket | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -115,8 +127,13 @@ export function useButlerChat() {
     async function init() {
       setLoadingConversations(true);
       try {
-        const list = await listButlerConversations();
+        const [list, settings] = await Promise.all([
+          listButlerConversations(),
+          getAppSettings().catch(() => null),
+        ]);
         setConversations(list);
+        if (settings?.butler_provider) setSelectedProvider(settings.butler_provider);
+        if (settings?.butler_model) setSelectedModel(settings.butler_model);
         if (list.length > 0) {
           const latest = list[0];
           setActiveConversationId(latest.id);
@@ -170,6 +187,18 @@ export function useButlerChat() {
     setMessages((prev) => prev.map((m) => (m.kind === 'job' && m.id === msgId ? { ...m, job: updatedJob } : m)));
   }, []);
 
+  const setProvider = useCallback((provider: string) => {
+    const nextModel = DEFAULT_MODELS[provider] ?? selectedModel;
+    setSelectedProvider(provider);
+    setSelectedModel(nextModel);
+    updateAppSettings({ butler_provider: provider || null, butler_model: nextModel || null }).catch(() => {});
+  }, [selectedModel]);
+
+  const setModel = useCallback((model: string) => {
+    setSelectedModel(model);
+    updateAppSettings({ butler_model: model || null }).catch(() => {});
+  }, []);
+
   const send = useCallback(() => {
     const content = input.trim();
     if (!content || sending) return;
@@ -212,7 +241,11 @@ export function useButlerChat() {
     selectConversation,
     send,
     sending,
+    selectedModel,
+    selectedProvider,
     setInput,
+    setModel,
+    setProvider,
     startNewConversation,
     updateJobMessage,
   };

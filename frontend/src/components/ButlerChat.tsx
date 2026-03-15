@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ConversationSidebar } from './butler/ConversationSidebar';
 import { MessageList } from './butler/MessageList';
+import { ModelSelector } from './butler/ModelSelector';
 import { useButlerChat } from './butler/useButlerChat';
 
 export default function ButlerChat() {
@@ -20,7 +21,11 @@ export default function ButlerChat() {
     selectConversation,
     send,
     sending,
+    selectedModel,
+    selectedProvider,
     setInput,
+    setModel,
+    setProvider,
     startNewConversation,
     updateJobMessage,
   } = useButlerChat();
@@ -72,6 +77,14 @@ export default function ButlerChat() {
               </div>
 
               <div className="border-t border-gray-100 p-3">
+                <ModelSelector
+                  provider={selectedProvider}
+                  model={selectedModel}
+                  onProviderChange={setProvider}
+                  onModelChange={setModel}
+                  disabled={sending}
+                  className="mb-2"
+                />
                 <div className="flex items-end gap-2">
                   <textarea
                     ref={inputRef}
