@@ -12,7 +12,8 @@ from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.models.app_setting import CONFIGURABLE_KEYS, SECRET_KEYS, AppSetting
 from app.models.user import User
-from app.schemas.settings import SettingsResponse, SettingsUpdate
+from app.providers.catalog import provider_catalog
+from app.schemas.settings import ProviderCatalogResponse, SettingsResponse, SettingsUpdate
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -58,3 +59,14 @@ async def update_settings(
     result = await db.execute(select(AppSetting))
     rows = {row.key: row.value for row in result.scalars()}
     return _build_response(rows)
+
+
+@router.get("/provider-catalog", response_model=ProviderCatalogResponse)
+async def get_provider_catalog(
+    _: User = Depends(get_current_user),
+) -> ProviderCatalogResponse:
+    catalog = provider_catalog()
+    return ProviderCatalogResponse(
+        providers=[entry.provider for entry in catalog],
+        models_by_provider={entry.provider: entry.models for entry in catalog},
+    )

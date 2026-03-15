@@ -7,7 +7,9 @@ import {
   getAppSettings,
   getGithubAuthorizeUrl,
   getGithubStatus,
+  getProviderCatalog,
   GithubStatus,
+  ProviderCatalog,
   updateAppSettings,
 } from '@/lib/api';
 
@@ -25,18 +27,30 @@ function AppConfigSection() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [catalog, setCatalog] = useState<ProviderCatalog | null>(null);
 
   useEffect(() => {
-    getAppSettings()
-      .then((data) => {
+    Promise.all([getAppSettings(), getProviderCatalog()])
+      .then(([data, providerCatalog]) => {
         setCfg(data);
         setForm(data);
+        setCatalog(providerCatalog);
       })
       .catch(() => setError('Could not load settings.'));
   }, []);
 
   function set(key: keyof AppSettings, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
+    setSaved(false);
+  }
+
+  function setProvider(value: string) {
+    setForm((f) => {
+      const models = value ? catalog?.models_by_provider[value] ?? [] : [];
+      const currentModel = f.butler_model ?? '';
+      const nextModel = models.includes(currentModel) ? currentModel : (models[0] ?? currentModel);
+      return { ...f, butler_provider: value, butler_model: nextModel };
+    });
     setSaved(false);
   }
 
@@ -119,17 +133,42 @@ function AppConfigSection() {
               <label className="mb-1 block text-xs font-medium text-gray-600">Provider</label>
               <select
                 value={form['butler_provider'] ?? ''}
-                onChange={(e) => { set('butler_provider', e.target.value); }}
+                onChange={(e) => { setProvider(e.target.value); }}
                 className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
               >
                 <option value="">— use default (anthropic) —</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="openai">OpenAI</option>
-                <option value="google">Google</option>
-                <option value="ollama">Ollama</option>
+                {(catalog?.providers ?? ['anthropic', 'openai', 'google', 'ollama']).map((provider) => (
+                  <option key={provider} value={provider}>{provider[0].toUpperCase() + provider.slice(1)}</option>
+                ))}
               </select>
             </div>
-            {field('butler_model', 'Model', 'claude-sonnet-4-6')}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Model</label>
+              <input
+                type="text"
+                value={form['butler_model'] ?? ''}
+                onChange={(e) => set('butler_model', e.target.value)}
+                placeholder="claude-sonnet-4-6"
+                className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              {(() => {
+                const provider = form['butler_provider'];
+                const savedModel = form['butler_model'] ?? '';
+                const models = provider ? (catalog?.models_by_provider[provider] ?? []) : [];
+                if (!provider || models.length === 0) return null;
+                const hasModel = !savedModel || models.includes(savedModel);
+                return (
+                  <>
+                    <p className="mt-1 text-xs text-gray-500">Suggested: {models.join(', ')}</p>
+                    {!hasModel && (
+                      <p className="mt-1 text-xs text-amber-600">
+                        Saved model “{savedModel}” is no longer in catalog for this provider (kept as-is).
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           </div>
         </div>
 

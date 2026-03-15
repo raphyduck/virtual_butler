@@ -30,6 +30,7 @@ from app.models.session import Session
 from app.models.skill import Skill
 from app.models.user import User
 from app.providers import ChatMessage, get_provider
+from app.providers.catalog import default_model_for, provider_names
 
 # Matches a fenced ```action ... ``` block anywhere in the AI response
 _ACTION_RE = re.compile(r"```action\s*\n(.*?)\n```", re.DOTALL)
@@ -115,7 +116,8 @@ class ButlerHandler:
             available.append("OpenAI / GPT")
         if await get_effective_setting(db, "google_api_key", os.getenv("GOOGLE_API_KEY", "")):
             available.append("Google / Gemini")
-        available.append("Ollama (local, no key needed)")
+        if "ollama" in provider_names():
+            available.append("Ollama (local, no key needed)")
 
         user = await db.get(User, uuid.UUID(user_id))
         github_status = (
@@ -135,11 +137,19 @@ class ButlerHandler:
         return "\n".join(lines)
 
     async def _resolve_provider(self, db: AsyncSession):
+<<<<<<< ours
         provider_name = self._conversation_provider or (
             await get_effective_setting(db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic"))
         )
         model = self._conversation_model or (
             await get_effective_setting(db, "butler_model", os.getenv("BUTLER_MODEL", "claude-sonnet-4-6"))
+=======
+        provider_name = await get_effective_setting(db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic"))
+        model = await get_effective_setting(
+            db,
+            "butler_model",
+            os.getenv("BUTLER_MODEL", default_model_for(provider_name or "anthropic")),
+>>>>>>> theirs
         )
 
         # Resolve API key from DB, falling back to env

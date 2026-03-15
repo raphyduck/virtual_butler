@@ -61,6 +61,14 @@ export const getAppSettings = (): Promise<AppSettings> => request('/settings');
 export const updateAppSettings = (data: Partial<AppSettings>): Promise<AppSettings> =>
   request('/settings', { method: 'PATCH', body: JSON.stringify(data) });
 
+
+export interface ProviderCatalog {
+  providers: string[];
+  models_by_provider: Record<string, string[]>;
+}
+
+export const getProviderCatalog = (): Promise<ProviderCatalog> => request('/settings/provider-catalog');
+
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
 export interface TokenResponse {

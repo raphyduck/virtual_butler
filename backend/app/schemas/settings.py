@@ -35,3 +35,8 @@ class SetupRequest(BaseModel):
     email: EmailStr
     password: str
     settings: SettingsUpdate | None = None
+
+
+class ProviderCatalogResponse(BaseModel):
+    providers: list[str]
+    models_by_provider: dict[str, list[str]]
