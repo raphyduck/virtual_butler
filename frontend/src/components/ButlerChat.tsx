@@ -21,13 +21,10 @@ export default function ButlerChat() {
     selectConversation,
     send,
     sending,
-<<<<<<< ours
     selectedModel,
     selectedProvider,
-=======
     sessionModel,
     sessionProvider,
->>>>>>> theirs
     setInput,
     setModel,
     setProvider,

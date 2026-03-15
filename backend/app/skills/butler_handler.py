@@ -137,19 +137,15 @@ class ButlerHandler:
         return "\n".join(lines)
 
     async def _resolve_provider(self, db: AsyncSession):
-<<<<<<< ours
         provider_name = self._conversation_provider or (
             await get_effective_setting(db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic"))
         )
         model = self._conversation_model or (
-            await get_effective_setting(db, "butler_model", os.getenv("BUTLER_MODEL", "claude-sonnet-4-6"))
-=======
-        provider_name = await get_effective_setting(db, "butler_provider", os.getenv("BUTLER_PROVIDER", "anthropic"))
-        model = await get_effective_setting(
-            db,
-            "butler_model",
-            os.getenv("BUTLER_MODEL", default_model_for(provider_name or "anthropic")),
->>>>>>> theirs
+            await get_effective_setting(
+                db,
+                "butler_model",
+                os.getenv("BUTLER_MODEL", default_model_for(provider_name or "anthropic")),
+            )
         )
 
         # Resolve API key from DB, falling back to env
