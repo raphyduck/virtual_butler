@@ -255,14 +255,21 @@ async def websocket_butler(websocket: WebSocket) -> None:
 
     # ── Resume active jobs from previous / interrupted sessions ───────────
     try:
+        conv_uuid = uuid.UUID(conversation_id) if conversation_id else None
+
         async with AsyncSessionLocal() as db:
-            # Active (non-terminal) jobs — always replay
-            result = await db.execute(
+            # Active (non-terminal) jobs — replay only for this conversation (or global jobs)
+            active_query = (
                 select(SelfModifyJob)
                 .where(SelfModifyJob.user_id == uuid.UUID(user_id))
                 .where(SelfModifyJob.status.notin_(list(_TERMINAL)))
-                .order_by(SelfModifyJob.created_at.asc())
             )
+            if conv_uuid is not None:
+                active_query = active_query.where(
+                    (SelfModifyJob.conversation_id == conv_uuid) | (SelfModifyJob.conversation_id.is_(None))
+                )
+            active_query = active_query.order_by(SelfModifyJob.created_at.asc())
+            result = await db.execute(active_query)
             active_jobs = result.scalars().all()
             for job in active_jobs:
                 try:
@@ -278,13 +285,17 @@ async def websocket_butler(websocket: WebSocket) -> None:
             # Recently-terminal jobs — replay so the job card is visible after
             # a reconnect or page reload even if the final event was missed.
             recent_cutoff = datetime.now(UTC) - timedelta(minutes=10)
-            result2 = await db.execute(
+            recent_query = (
                 select(SelfModifyJob)
                 .where(SelfModifyJob.user_id == uuid.UUID(user_id))
                 .where(SelfModifyJob.status.in_(list(_TERMINAL)))
                 .where(SelfModifyJob.completed_at >= recent_cutoff)
-                .order_by(SelfModifyJob.created_at.asc())
             )
+            if conv_uuid is not None:
+                recent_query = recent_query.where(
+                    (SelfModifyJob.conversation_id == conv_uuid) | (SelfModifyJob.conversation_id.is_(None))
+                )
+            result2 = await db.execute(recent_query.order_by(SelfModifyJob.created_at.asc()))
             recent_jobs = result2.scalars().all()
             for job in recent_jobs:
                 try:

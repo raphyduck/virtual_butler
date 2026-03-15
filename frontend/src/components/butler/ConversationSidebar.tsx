@@ -19,10 +19,12 @@ export function ConversationSidebar({ activeId, conversations, loading, onNew, o
         {!loading && conversations.length === 0 && <p className={compact ? 'px-2 py-3 text-center text-[10px] text-gray-400' : 'px-3 py-4 text-center text-xs text-gray-400'}>No past chats</p>}
         {conversations.map((conversation) => {
           const active = conversation.id === activeId;
+          const preview = conversation.preview?.trim();
+          const hasPreview = preview && !['empty', '(empty)'].includes(preview.toLowerCase());
           return (
             <button key={conversation.id} onClick={() => onSelect(conversation.id)} className={compact ? `w-full px-2 py-2 text-left transition-colors hover:bg-gray-100 ${active ? 'border-r-2 border-green-500 bg-green-50' : ''}` : `w-full px-3 py-2.5 text-left transition-colors hover:bg-gray-100 ${active ? 'border-r-2 border-green-500 bg-green-50' : ''}`}>
               <p className={compact ? `text-[10px] font-medium ${active ? 'text-green-700' : 'text-gray-500'}` : `text-xs font-medium ${active ? 'text-green-700' : 'text-gray-500'}`}>{formatDate(conversation.updated_at)}</p>
-              <p className={compact ? 'mt-0.5 line-clamp-2 text-[11px] leading-tight text-gray-700' : 'mt-0.5 line-clamp-2 text-xs leading-tight text-gray-700'}>{conversation.preview ?? <span className="italic text-gray-400">Empty chat</span>}</p>
+              <p className={compact ? 'mt-0.5 line-clamp-2 text-[11px] leading-tight text-gray-700' : 'mt-0.5 line-clamp-2 text-xs leading-tight text-gray-700'}>{hasPreview ? preview : <span className="italic text-gray-400">Empty chat</span>}</p>
             </button>
           );
         })}

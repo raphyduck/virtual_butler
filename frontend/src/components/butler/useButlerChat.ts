@@ -13,6 +13,7 @@ import { ButlerWebSocket, type ButlerWsEvent } from '@/lib/ws';
 import { toChatMessages, uid } from './constants';
 import type { ChatMessage } from './types';
 
+<<<<<<< ours
 
 const DEFAULT_MODELS: Record<string, string> = {
   anthropic: 'claude-sonnet-4-6',
@@ -20,6 +21,29 @@ const DEFAULT_MODELS: Record<string, string> = {
   google: 'gemini-2.5-pro',
   ollama: 'llama3.1',
 };
+=======
+function upsertJob(prev: ChatMessage[], eventJob: ButlerJob, resetSteps = false): ChatMessage[] {
+  let found = false;
+  const next: ChatMessage[] = [];
+  for (const message of prev) {
+    if (message.kind !== 'job') {
+      next.push(message);
+      continue;
+    }
+    if (message.job.id !== eventJob.id) {
+      next.push(message);
+      continue;
+    }
+    if (!found) {
+      next.push({ ...message, job: eventJob, ...(resetSteps ? { steps: [] } : {}) });
+      found = true;
+    }
+  }
+
+  if (!found) next.push({ id: uid(), kind: 'job', job: eventJob, steps: [] });
+  return next;
+}
+>>>>>>> theirs
 
 export function useButlerChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -96,18 +120,7 @@ export function useButlerChat() {
     }
 
     if (event.type === 'modify_started' || event.type === 'modify_snapshot') {
-      setMessages((prev) => {
-        const resetSteps = event.type === 'modify_started';
-        const exists = prev.some((m) => m.kind === 'job' && m.job.id === event.job.id);
-        if (exists) {
-          return prev.map((m) => (
-            m.kind === 'job' && m.job.id === event.job.id
-              ? { ...m, job: event.job, ...(resetSteps ? { steps: [] } : {}) }
-              : m
-          ));
-        }
-        return [...prev, { id: uid(), kind: 'job', job: event.job, steps: [] }];
-      });
+      setMessages((prev) => upsertJob(prev, event.job, event.type === 'modify_started'));
       return;
     }
 
@@ -117,7 +130,7 @@ export function useButlerChat() {
     }
 
     if (event.type === 'modify_update' || event.type === 'modify_done') {
-      setMessages((prev) => prev.map((m) => (m.kind === 'job' && m.job.id === event.job.id ? { ...m, job: event.job } : m)));
+      setMessages((prev) => upsertJob(prev, event.job));
     }
   }, [refreshConversations]);
 
