@@ -49,11 +49,11 @@ class ConversationSummaryOut(BaseModel):
     preview: str | None  # First message content, truncated to 100 chars
 
 
-<<<<<<< ours
 class ConversationCreateIn(BaseModel):
     provider: str | None = None
     model: str | None = None
-=======
+
+
 def _preview_text(conv: Conversation) -> str | None:
     """Pick a meaningful preview, avoiding empty placeholder-like content."""
     for message in conv.butler_messages:
@@ -61,7 +61,6 @@ def _preview_text(conv: Conversation) -> str | None:
         if text and text.lower() not in {"empty", "(empty)"}:
             return text[:100]
     return None
->>>>>>> theirs
 
 
 def _conv_out(conv: Conversation) -> ConversationOut:
@@ -101,13 +100,9 @@ async def list_conversations(
             id=str(conv.id),
             created_at=conv.created_at.isoformat(),
             updated_at=conv.updated_at.isoformat(),
-<<<<<<< ours
             provider=conv.provider,
             model=conv.model,
-            preview=(conv.butler_messages[0].content[:100] if conv.butler_messages else None),
-=======
             preview=_preview_text(conv),
->>>>>>> theirs
         )
         for conv in conversations
     ]

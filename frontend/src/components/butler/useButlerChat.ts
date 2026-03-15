@@ -4,7 +4,6 @@ import {
   type ButlerConversationSummary,
   type ButlerJob,
   createButlerConversation,
-  getAppSettings,
   getButlerConversation,
   listButlerConversations,
   updateAppSettings,
@@ -13,15 +12,13 @@ import { ButlerWebSocket, type ButlerWsEvent } from '@/lib/ws';
 import { toChatMessages, uid } from './constants';
 import type { ChatMessage } from './types';
 
-<<<<<<< ours
-
 const DEFAULT_MODELS: Record<string, string> = {
   anthropic: 'claude-sonnet-4-6',
   openai: 'gpt-5',
   google: 'gemini-2.5-pro',
   ollama: 'llama3.1',
 };
-=======
+
 function upsertJob(prev: ChatMessage[], eventJob: ButlerJob, resetSteps = false): ChatMessage[] {
   let found = false;
   const next: ChatMessage[] = [];
@@ -43,7 +40,6 @@ function upsertJob(prev: ChatMessage[], eventJob: ButlerJob, resetSteps = false)
   if (!found) next.push({ id: uid(), kind: 'job', job: eventJob, steps: [] });
   return next;
 }
->>>>>>> theirs
 
 export function useButlerChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -53,13 +49,10 @@ export function useButlerChat() {
   const [conversations, setConversations] = useState<ButlerConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(false);
-<<<<<<< ours
   const [selectedProvider, setSelectedProvider] = useState('anthropic');
   const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6');
-=======
   const [sessionProvider, setSessionProvider] = useState<string | null>(null);
   const [sessionModel, setSessionModel] = useState<string | null>(null);
->>>>>>> theirs
 
   const wsRef = useRef<ButlerWebSocket | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -146,20 +139,10 @@ export function useButlerChat() {
     async function init() {
       setLoadingConversations(true);
       try {
-<<<<<<< ours
         const [list, settings] = await Promise.all([
           listButlerConversations(),
           getAppSettings().catch(() => null),
         ]);
-=======
-        try {
-          const settings = await getAppSettings();
-          setSessionProvider(settings.butler_provider);
-          setSessionModel(settings.butler_model);
-        } catch {}
-
-        const list = await listButlerConversations();
->>>>>>> theirs
         setConversations(list);
         if (settings?.butler_provider) setSelectedProvider(settings.butler_provider);
         if (settings?.butler_model) setSelectedModel(settings.butler_model);
@@ -203,7 +186,7 @@ export function useButlerChat() {
 
   const startNewConversation = useCallback(async () => {
     try {
-      const conversation = await createButlerConversation({ provider: sessionProvider, model: sessionModel });
+      const conversation = await createButlerConversation({ provider: selectedProvider, model: selectedModel });
       setConversations((prev) => [{
         id: conversation.id,
         created_at: conversation.created_at,
@@ -220,7 +203,7 @@ export function useButlerChat() {
       connectWs(conversation.id);
       setTimeout(() => inputRef.current?.focus(), 50);
     } catch {}
-  }, [connectWs, sessionModel, sessionProvider]);
+  }, [connectWs, selectedModel, selectedProvider]);
 
   const updateJobMessage = useCallback((msgId: string, updatedJob: ButlerJob) => {
     setMessages((prev) => prev.map((m) => (m.kind === 'job' && m.id === msgId ? { ...m, job: updatedJob } : m)));
@@ -280,13 +263,10 @@ export function useButlerChat() {
     selectConversation,
     send,
     sending,
-<<<<<<< ours
     selectedModel,
     selectedProvider,
-=======
     sessionModel,
     sessionProvider,
->>>>>>> theirs
     setInput,
     setModel,
     setProvider,
