@@ -120,6 +120,10 @@ class RateLimiter:
     def _current_rpm(self) -> int:
         return len(self._request_times)
 
+    @property
+    def max_input_tokens(self) -> int:
+        return self._effective_tpm
+
     # ── Public interface ─────────────────────────────────────────────────────
 
     async def acquire(self, estimated_tokens: int) -> int:

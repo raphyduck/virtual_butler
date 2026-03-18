@@ -307,6 +307,25 @@ def _compress_messages(messages: list[dict]) -> tuple[list[dict], int]:
     return [first] + compressed_middle + recent, chars_saved
 
 
+def _fit_messages_to_budget(messages: list[dict], limiter) -> tuple[list[dict], int]:
+    """Shrink agent history until the estimated request fits the limiter budget."""
+    estimated = limiter.estimate_tokens(messages, _SYSTEM, tools=_TOOLS)
+    if estimated <= limiter.max_input_tokens:
+        return messages, estimated
+
+    while estimated > limiter.max_input_tokens:
+        compressed, chars_saved = _compress_messages(messages)
+        if chars_saved:
+            messages = compressed
+        elif len(messages) > 2:
+            del messages[1]
+        else:
+            break
+        estimated = limiter.estimate_tokens(messages, _SYSTEM, tools=_TOOLS)
+
+    return messages, estimated
+
+
 # ── Modifier ──────────────────────────────────────────────────────────────────
 
 
@@ -475,11 +494,13 @@ class AgentModifier:
         planned: list[FileChange] = []
         commit_message = "chore: apply butler modification"
 
-        file_tree = self._list_files()
         messages: list[dict] = [
             {
                 "role": "user",
-                "content": (f"Repository files:\n```\n{file_tree}\n```\n\nInstruction: {instruction}"),
+                "content": (
+                    f"Instruction: {instruction}\n\n"
+                    "Use list_files first if you need to inspect the repository layout."
+                ),
             }
         ]
 
@@ -491,15 +512,9 @@ class AgentModifier:
 
             # Compress older messages when approaching the token budget
             if estimated > _COMPRESS_THRESHOLD and len(messages) > _KEEP_RECENT_MESSAGES + 1:
-                messages, chars_saved = _compress_messages(messages)
                 old_estimated = estimated
-                estimated = limiter.estimate_tokens(messages, _SYSTEM, tools=_TOOLS)
-                logger.info(
-                    "Compressed chat history: %d → %d estimated tokens (saved ~%d chars)",
-                    old_estimated,
-                    estimated,
-                    chars_saved,
-                )
+                messages, estimated = _fit_messages_to_budget(messages, limiter)
+                logger.info("Compacted chat history: %d → %d estimated tokens", old_estimated, estimated)
 
             logger.info(
                 "Agent loop iteration %d: estimated %d input tokens, %d messages",
