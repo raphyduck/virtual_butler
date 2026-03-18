@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { type ChatMessage as ApiMessage, getMessages } from '@/lib/api';
 import { SessionWebSocket, type WsEvent } from '@/lib/ws';
 import clsx from 'clsx';
+import { useScrollAnchor } from '@/hooks/useScrollAnchor';
 
 interface Props {
   sessionId: string;
@@ -23,20 +24,38 @@ export default function ChatWindow({ sessionId, skillId }: Props) {
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<SessionWebSocket | null>(null);
+
+  // ── Scroll anchor ──────────────────────────────────────────────────────────
+  const { scrollRef, bottomRef, isAtBottom, scrollToBottom } = useScrollAnchor();
+
+  /**
+   * Track whether this is the very first message load so we can do an instant
+   * jump to the bottom on initial render without caring about the user's current
+   * scroll position.
+   */
+  const initialLoadRef = useRef(true);
 
   // Load existing messages then connect WS
   useEffect(() => {
+    // Reset the initial-load flag when the session changes.
+    initialLoadRef.current = true;
+
     getMessages(skillId, sessionId)
-      .then((msgs: ApiMessage[]) =>
+      .then((msgs: ApiMessage[]) => {
         setMessages(
           msgs
             .filter((m) => m.role !== 'system')
             .map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content })),
-        ),
-      )
-      .catch(() => {/* start fresh */});
+        );
+        // After the history loads, snap straight to the bottom.
+        // We use a microtask so the DOM has a chance to update first.
+        setTimeout(() => scrollToBottom('instant' as ScrollBehavior), 0);
+        initialLoadRef.current = false;
+      })
+      .catch(() => {
+        initialLoadRef.current = false;
+      });
 
     const ws = new SessionWebSocket(sessionId, (evt: WsEvent) => {
       if (evt.type === 'chunk') {
@@ -71,13 +90,20 @@ export default function ChatWindow({ sessionId, skillId }: Props) {
     return () => {
       ws.close();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, skillId]);
 
-  // Auto-scroll
+  // ── Conditional auto-scroll on new / streaming messages ───────────────────
+  // Only scroll if the user is already near the bottom — never interrupt manual
+  // upward scrolling.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (initialLoadRef.current) return; // handled by the load effect above
+    if (isAtBottom) {
+      scrollToBottom();
+    }
+  }, [messages, isAtBottom, scrollToBottom]);
 
+  // ── Send ───────────────────────────────────────────────────────────────────
   function send() {
     const text = input.trim();
     if (!text || busy) return;
@@ -95,6 +121,9 @@ export default function ChatWindow({ sessionId, skillId }: Props) {
       { id: `user-${Date.now()}`, role: 'user', content: text },
     ]);
     wsRef.current.send(text);
+
+    // Always scroll to the bottom after the user intentionally sends a message.
+    scrollToBottom();
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -107,7 +136,11 @@ export default function ChatWindow({ sessionId, skillId }: Props) {
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 pb-4">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto space-y-4 pb-4 relative"
+        data-testid="message-list"
+      >
         {messages.length === 0 && (
           <p className="text-center text-sm text-gray-400 pt-16">
             Send a message to start the conversation.
@@ -116,8 +149,22 @@ export default function ChatWindow({ sessionId, skillId }: Props) {
         {messages.map((m) => (
           <Bubble key={m.id} message={m} />
         ))}
-        <div ref={bottomRef} />
+        <div ref={bottomRef} data-testid="scroll-bottom-sentinel" />
       </div>
+
+      {/* Jump-to-latest button */}
+      {!isAtBottom && messages.length > 0 && (
+        <div className="flex justify-center pb-2">
+          <button
+            onClick={() => scrollToBottom()}
+            className="flex items-center gap-1 text-xs text-gray-500 bg-white border border-gray-200 shadow-sm rounded-full px-3 py-1 hover:bg-gray-50 transition-colors"
+            aria-label="Jump to latest message"
+            data-testid="jump-to-latest"
+          >
+            ↓ Jump to latest
+          </button>
+        </div>
+      )}
 
       {/* Error bar */}
       {error && (
@@ -137,11 +184,13 @@ export default function ChatWindow({ sessionId, skillId }: Props) {
           disabled={!connected || busy}
           placeholder={connected ? 'Type a message… (Enter to send, Shift+Enter for newline)' : 'Connecting…'}
           className="input flex-1 resize-none"
+          data-testid="message-input"
         />
         <button
           onClick={send}
           disabled={!connected || busy || !input.trim()}
           className="btn-primary self-end px-6"
+          data-testid="send-button"
         >
           {busy ? '…' : 'Send'}
         </button>
