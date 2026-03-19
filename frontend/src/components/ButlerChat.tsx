@@ -1,14 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { ConversationSidebar } from './butler/ConversationSidebar';
 import { MessageList } from './butler/MessageList';
 import { ModelSelector } from './butler/ModelSelector';
 import { useButlerChat } from './butler/useButlerChat';
+import { useScrollAnchor } from '@/hooks/useScrollAnchor';
 
 export default function ButlerChat() {
   const [open, setOpen] = useState(false);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
   const {
     activeConversationId,
     connected,
@@ -17,9 +17,9 @@ export default function ButlerChat() {
     inputRef,
     loadingConversations,
     messages,
-    onInputKeyDown,
+    onInputKeyDown: baseOnInputKeyDown,
     selectConversation,
-    send,
+    send: baseSend,
     sending,
     selectedModel,
     selectedProvider,
@@ -32,13 +32,59 @@ export default function ButlerChat() {
     updateJobMessage,
   } = useButlerChat();
 
+  // ── Scroll anchor ──────────────────────────────────────────────────────────
+  const { scrollRef, bottomRef, isAtBottom, scrollToBottom } = useScrollAnchor();
+
+  /**
+   * Track the conversation id from the previous render so we can tell when the
+   * user switched conversations (and therefore always jump to the bottom).
+   */
+  const prevConversationIdRef = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
-    if (open) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, open]);
+    if (!open) return; // Don't scroll the hidden widget
+
+    const conversationChanged = prevConversationIdRef.current !== activeConversationId;
+    prevConversationIdRef.current = activeConversationId;
+
+    if (conversationChanged) {
+      scrollToBottom('instant' as ScrollBehavior);
+      return;
+    }
+
+    // Same conversation — only auto-scroll when the user is near the bottom.
+    if (isAtBottom) {
+      scrollToBottom();
+    }
+  }, [messages, open, activeConversationId, isAtBottom, scrollToBottom]);
+
+  // When the widget opens, jump to the bottom immediately.
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => scrollToBottom('instant' as ScrollBehavior), 0);
+    }
+  }, [open, scrollToBottom]);
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50);
   }, [open, inputRef]);
+
+  // ── Wrap send to force-scroll after intentional send ──────────────────────
+  const send = useCallback(() => {
+    baseSend();
+    scrollToBottom();
+  }, [baseSend, scrollToBottom]);
+
+  // Keep Enter key handler in sync with the wrapped send.
+  const onInputKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    },
+    [send],
+  );
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2">
@@ -66,7 +112,11 @@ export default function ButlerChat() {
             />
 
             <div className="flex flex-1 flex-col overflow-hidden">
-              <div className="space-y-2 overflow-y-auto py-3">
+              <div
+                ref={scrollRef}
+                className="space-y-2 overflow-y-auto py-3 flex-1 relative"
+                data-testid="butler-message-list"
+              >
                 {messages.length === 0 && (
                   <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-gray-400">
                     <span className="text-3xl">🤵</span>
@@ -75,8 +125,22 @@ export default function ButlerChat() {
                   </div>
                 )}
                 <MessageList messages={messages} onJobUpdate={updateJobMessage} variant="compact" />
-                <div ref={bottomRef} />
+                <div ref={bottomRef} data-testid="scroll-bottom-sentinel" />
               </div>
+
+              {/* Jump-to-latest button */}
+              {!isAtBottom && messages.length > 0 && (
+                <div className="flex justify-center py-1 border-t border-gray-100">
+                  <button
+                    onClick={() => scrollToBottom()}
+                    className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-700 transition-colors"
+                    aria-label="Jump to latest message"
+                    data-testid="jump-to-latest"
+                  >
+                    ↓ Jump to latest
+                  </button>
+                </div>
+              )}
 
               <div className="border-t border-gray-100 p-3">
                 <ModelSelector
@@ -103,8 +167,15 @@ export default function ButlerChat() {
                       el.style.height = 'auto';
                       el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
                     }}
+                    data-testid="message-input"
                   />
-                  <button onClick={send} disabled={sending || !input.trim()} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:opacity-40" aria-label="Send">
+                  <button
+                    onClick={send}
+                    disabled={sending || !input.trim()}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:opacity-40"
+                    aria-label="Send"
+                    data-testid="send-button"
+                  >
                     {sending ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>}
                   </button>
                 </div>
