@@ -3,6 +3,7 @@ import {
   getAppSettings,
   type ButlerConversationSummary,
   type ButlerJob,
+  type ModifyJob,
   createButlerConversation,
   getButlerConversation,
   getModifyJob,
@@ -73,7 +74,7 @@ export function useButlerChat() {
       }),
     );
 
-    const nextJobs = new Map(refreshed.filter((entry): entry is readonly [string, ButlerJob] => entry !== null));
+    const nextJobs = new Map<string, ModifyJob>(refreshed.flatMap((entry) => (entry ? [entry] : [])));
     if (nextJobs.size === 0) return;
 
     setMessages((prev) => prev.map((message) => (
