@@ -52,6 +52,7 @@ def _resolve_github_login(token: str, fallback: str) -> str:
         return fallback
     return login or fallback
 
+
 # ── Data model ────────────────────────────────────────────────────────────────
 
 

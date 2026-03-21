@@ -19,7 +19,7 @@ log_handler.setFormatter(_fmt)
 logging.root.addHandler(log_handler)
 logging.root.setLevel(logging.INFO)
 # Quiet down noisy third-party loggers
-for _name in ("httpcore", "httpx", "watchfiles", "multipart"):
+for _name in ("httpcore", "httpx", "watchfiles", "multipart", "sqlalchemy.engine", "sqlalchemy.pool"):
     logging.getLogger(_name).setLevel(logging.WARNING)
 
 app = FastAPI(
