@@ -16,6 +16,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from app.config import settings
 from app.providers.base import ChatMessage
@@ -31,6 +33,24 @@ def _normalize_remote_branch_ref(branch: str) -> str:
     if branch.startswith("refs/"):
         return branch
     return f"refs/heads/{branch}"
+
+
+def _resolve_github_login(token: str, fallback: str) -> str:
+    """Return the GitHub login tied to the token for GHCR auth."""
+    request = Request(
+        "https://api.github.com/user",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    try:
+        with urlopen(request, timeout=10) as response:  # noqa: S310
+            login = json.loads(response.read()).get("login")
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        return fallback
+    return login or fallback
 
 # ── Data model ────────────────────────────────────────────────────────────────
 
@@ -339,10 +359,11 @@ class CodeModifier:
     def docker_build_and_push(self, token: str, owner: str, repo: str, version: str) -> None:
         """Build backend + frontend Docker images and push them to GHCR."""
         registry = f"ghcr.io/{owner.lower()}/{repo.lower()}"
+        login = _resolve_github_login(token, fallback=owner)
 
         # Authenticate to GHCR
         subprocess.run(
-            ["docker", "login", "ghcr.io", "-u", owner, "--password-stdin"],
+            ["docker", "login", "ghcr.io", "-u", login, "--password-stdin"],
             input=token,
             cwd=self.repo_root,
             check=True,
