@@ -5,6 +5,7 @@ import {
   type ButlerJob,
   createButlerConversation,
   getButlerConversation,
+  getModifyJob,
   listButlerConversations,
   updateAppSettings,
 } from '@/lib/api';
@@ -56,6 +57,29 @@ export function useButlerChat() {
 
   const wsRef = useRef<ButlerWebSocket | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const refreshVisibleJobs = useCallback(async () => {
+    const visibleJobs = messages.filter((message): message is Extract<ChatMessage, { kind: 'job' }> =>
+      message.kind === 'job' && !['done', 'failed', 'cancelled'].includes(message.job.status));
+    if (visibleJobs.length === 0) return;
+
+    const refreshed = await Promise.all(
+      visibleJobs.map(async (message) => {
+        try {
+          return [message.job.id, await getModifyJob(message.job.id)] as const;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    const nextJobs = new Map(refreshed.filter((entry): entry is readonly [string, ButlerJob] => entry !== null));
+    if (nextJobs.size === 0) return;
+
+    setMessages((prev) => prev.map((message) => (
+      message.kind === 'job' ? { ...message, job: nextJobs.get(message.job.id) ?? message.job } : message
+    )));
+  }, [messages]);
 
   const refreshConversations = useCallback(async () => {
     try {
@@ -109,6 +133,7 @@ export function useButlerChat() {
       setConnected(true);
       setSending(false);
       setMessages((prev) => [...prev, { id: uid(), kind: 'text', role: 'system', content: 'Reconnected' }]);
+      void refreshVisibleJobs();
       return;
     }
 
@@ -125,7 +150,7 @@ export function useButlerChat() {
     if (event.type === 'modify_update' || event.type === 'modify_done') {
       setMessages((prev) => upsertJob(prev, event.job));
     }
-  }, [refreshConversations]);
+  }, [refreshConversations, refreshVisibleJobs]);
 
   const connectWs = useCallback((conversationId: string | null) => {
     wsRef.current?.close();
