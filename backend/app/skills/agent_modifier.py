@@ -498,8 +498,7 @@ class AgentModifier:
             {
                 "role": "user",
                 "content": (
-                    f"Instruction: {instruction}\n\n"
-                    "Use list_files first if you need to inspect the repository layout."
+                    f"Instruction: {instruction}\n\nUse list_files first if you need to inspect the repository layout."
                 ),
             }
         ]
