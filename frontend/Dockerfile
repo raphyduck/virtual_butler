@@ -21,6 +21,8 @@ ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL
 # They must be declared as ARGs here so docker-compose can pass them in.
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_WS_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 RUN npm run build
 
 # ─── Production ───────────────────────────────────────────────────────────────
