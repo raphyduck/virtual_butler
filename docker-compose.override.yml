@@ -1,15 +1,13 @@
 # Development overrides — applied automatically when you run `docker compose up`
-# Enables hot-reload for backend and frontend, and exposes DB/Redis ports.
+# Enables hot-reload for backend and frontend, and exposes the database port.
+# Redis stays internal to the Docker Compose network; use docker-compose.redis-host.yml
+# only when you explicitly need host access.
 
 services:
 
   db:
     ports:
       - "${DB_PORT:-5432}:5432"
-
-  redis:
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
 
   backend:
     build:

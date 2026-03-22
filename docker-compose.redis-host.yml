@@ -1,0 +1,7 @@
+# Optional development override for host access to Redis.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.redis-host.yml up
+
+services:
+  redis:
+    ports:
+      - "${REDIS_PORT:-6379}:6379"

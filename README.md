@@ -104,7 +104,13 @@ Open `.env` and fill in the required values:
 docker compose up
 ```
 
-The `docker-compose.override.yml` file is applied automatically and enables live-reload, exposes the database on port `5432`, and Redis on port `6379`.
+The `docker-compose.override.yml` file is applied automatically and enables live-reload while exposing the database on port `5432`. Redis stays internal to the Docker Compose network, which already works with `REDIS_URL=redis://redis:6379`.
+
+If you need host access to Redis for local debugging, opt in with:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.redis-host.yml up
+```
 
 **Production** (pre-built images from GHCR):
 
