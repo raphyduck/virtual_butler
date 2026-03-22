@@ -48,6 +48,7 @@ export function useButlerChat() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('Connecting…');
   const [conversations, setConversations] = useState<ButlerConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(false);
@@ -122,16 +123,21 @@ export function useButlerChat() {
     }
 
     if (event.type === 'error') {
+      setConnectionStatus(event.detail);
       setMessages((prev) => [...prev, { id: uid(), kind: 'text', role: 'system', content: `⚠ ${event.detail}` }]);
       setSending(false);
       return;
     }
 
-    if (event.type === 'connected') setConnected(true);
+    if (event.type === 'connected') {
+      setConnected(true);
+      setConnectionStatus('Connected');
+    }
     if (event.type === 'disconnected') setConnected(false);
 
     if (event.type === 'reconnected') {
       setConnected(true);
+      setConnectionStatus('Connected');
       setSending(false);
       setMessages((prev) => [...prev, { id: uid(), kind: 'text', role: 'system', content: 'Reconnected' }]);
       void refreshVisibleJobs();
@@ -156,6 +162,7 @@ export function useButlerChat() {
   const connectWs = useCallback((conversationId: string | null) => {
     wsRef.current?.close();
     setConnected(false);
+    setConnectionStatus('Connecting…');
     const ws = new ButlerWebSocket(handleWsEvent, conversationId);
     wsRef.current = ws;
     ws.connect();
@@ -257,6 +264,7 @@ export function useButlerChat() {
 
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       setConnected(false);
+      setConnectionStatus('Reconnexion en cours…');
       setMessages((prev) => [...prev, {
         id: uid(),
         kind: 'text',
@@ -280,6 +288,7 @@ export function useButlerChat() {
   return {
     activeConversationId,
     connected,
+    connectionStatus,
     conversations,
     input,
     inputRef,
