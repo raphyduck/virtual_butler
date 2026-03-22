@@ -18,7 +18,8 @@ export const dynamic = 'force-dynamic';
 
 export default async function DebugPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '(not set)';
-  const backendInternalUrl = process.env.BACKEND_INTERNAL_URL ?? '(not set — rewrite fell back to NEXT_PUBLIC_API_URL or http://localhost:8000)';
+  const backendInternalUrl = process.env.BACKEND_INTERNAL_URL ?? '(not set — rewrite falls back to NEXT_PUBLIC_API_URL or http://localhost:8000)';
+  const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? '(not set — WebSockets fall back to the page origin)';
   const nodeEnv = process.env.NODE_ENV ?? '(not set)';
   const port = process.env.PORT ?? '(not set)';
   const hostname = process.env.HOSTNAME ?? '(not set)';
@@ -47,6 +48,7 @@ export default async function DebugPage() {
               ['HOSTNAME', hostname],
               ['NEXT_PUBLIC_API_URL', apiUrl],
               ['BACKEND_INTERNAL_URL', backendInternalUrl],
+              ['NEXT_PUBLIC_WS_URL', wsUrl],
             ].map(([k, v]) => (
               <tr key={k} style={{ borderBottom: '1px solid #ddd' }}>
                 <td style={{ padding: '0.4rem 1rem 0.4rem 0', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{k}</td>
@@ -83,13 +85,16 @@ export default async function DebugPage() {
         </pre>
 
         <p style={{ marginTop: '1rem', color: '#666', fontSize: '0.9rem' }}>
-          <strong>What this means:</strong> All <code>/api/*</code> requests from
-          the browser hit the Next.js server, which rewrites them to{' '}
-          <code>BACKEND_INTERNAL_URL</code> (set at image build time via a Dockerfile{' '}
-          <code>ARG</code>). In Docker this is <code>http://backend:8000</code>.{' '}
-          <code>NEXT_PUBLIC_API_URL</code> is only used by the browser for WebSocket
-          connections and direct links — it is <em>not</em> the rewrite target.
-          Both checks above should show ✅ for the app to function correctly.
+          <strong>What this means:</strong> Browser <code>/api/*</code> requests hit
+          the Next.js server, which rewrites them to <code>BACKEND_INTERNAL_URL</code>{' '}
+          (build-time fallback: <code>NEXT_PUBLIC_API_URL</code>, then{' '}
+          <code>http://localhost:8000</code>). WebSockets follow{' '}
+          <code>frontend/src/lib/ws.ts</code>: they use <code>NEXT_PUBLIC_WS_URL</code>{' '}
+          when it is defined, otherwise they connect back to the current page
+          origin with <code>ws://</code> or <code>wss://</code> depending on the
+          page protocol. <code>NEXT_PUBLIC_API_URL</code> is not the default
+          WebSocket target. Both checks above should show ✅ for the app to
+          function correctly.
         </p>
       </section>
 
