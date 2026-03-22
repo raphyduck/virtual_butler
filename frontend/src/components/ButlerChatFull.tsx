@@ -11,6 +11,7 @@ export default function ButlerChatFull() {
   const {
     activeConversationId,
     connected,
+    connectionStatus,
     conversations,
     input,
     inputRef,
@@ -53,7 +54,7 @@ export default function ButlerChatFull() {
       <div className="flex flex-1 flex-col overflow-hidden p-4">
         <div className="flex items-center gap-2 pb-3">
           <span className={`h-2 w-2 rounded-full ${connected ? 'bg-green-500' : 'animate-pulse bg-gray-300'}`} />
-          <span className="text-xs text-gray-400">{connected ? 'Connected' : 'Connecting…'}{sessionProvider && sessionModel ? ` · ${sessionProvider}/${sessionModel}` : ''}</span>
+          <span className="text-xs text-gray-400">{connectionStatus}{sessionProvider && sessionModel ? ` · ${sessionProvider}/${sessionModel}` : ''}</span>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto pb-4">

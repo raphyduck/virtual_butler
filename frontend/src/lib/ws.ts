@@ -158,6 +158,13 @@ export type ButlerWsEvent =
 
 export type ButlerWsEventHandler = (event: ButlerWsEvent) => void;
 
+function describeWebSocketClose(ev: CloseEvent): string {
+  const meta = `code ${ev.code}, raison: ${ev.reason || 'absente'}, fermeture ${ev.wasClean ? 'propre' : 'non propre'}`;
+  if (ev.code === 4001) return `Session expirée (${meta})`;
+  if (ev.code === 1006 || !ev.reason) return `Problème réseau / proxy WebSocket (${meta})`;
+  return `Connexion fermée à distance (${meta})`;
+}
+
 export class ButlerWebSocket {
   private ws: WebSocket | null = null;
   private onEvent: ButlerWsEventHandler;
@@ -207,6 +214,9 @@ export class ButlerWebSocket {
 
     this.ws.onclose = (ev) => {
       this.ws = null;
+      if (!this._intentionalClose) {
+        this.onEvent({ type: 'error', detail: describeWebSocketClose(ev) });
+      }
       this.onEvent({ type: 'disconnected' });
       if (!this._intentionalClose) {
         if (ev.code === 4001) {

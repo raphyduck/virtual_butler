@@ -12,6 +12,7 @@ export default function ButlerChat() {
   const {
     activeConversationId,
     connected,
+    connectionStatus,
     conversations,
     input,
     inputRef,
@@ -95,7 +96,7 @@ export default function ButlerChat() {
               <span className="text-base">🤵</span>
               <div>
                 <p className="text-sm font-semibold text-white">Personal Assistant</p>
-                <p className="text-[10px] text-green-200">{connected ? 'Connected' : 'Connecting…'}{sessionProvider && sessionModel ? ` · ${sessionProvider}/${sessionModel}` : ''}</p>
+                <p className="text-[10px] text-green-200">{connectionStatus}{sessionProvider && sessionModel ? ` · ${sessionProvider}/${sessionModel}` : ''}</p>
               </div>
             </div>
             <button onClick={() => setOpen(false)} className="rounded p-1 text-green-200 hover:bg-white/10 hover:text-white" aria-label="Close butler chat">✕</button>
