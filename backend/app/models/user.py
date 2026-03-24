@@ -23,6 +23,7 @@ class User(Base):
     github_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
     github_access_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
     github_is_repo_owner: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     skills: Mapped[list["Skill"]] = relationship(  # noqa: F821
         "Skill", back_populates="user", cascade="all, delete-orphan"
