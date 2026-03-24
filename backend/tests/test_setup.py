@@ -17,6 +17,7 @@ pytestmark = pytest.mark.asyncio
 
 SETUP_STATUS = "/api/v1/setup/status"
 SETUP = "/api/v1/setup"
+LOGIN = "/api/v1/auth/login"
 
 
 # ── Isolated client fixture ───────────────────────────────────────────────────
@@ -122,3 +123,17 @@ async def test_setup_rejects_invalid_email(fresh_client: AsyncClient):
         json={"email": "not-an-email", "password": "password123"},
     )
     assert resp.status_code == 422
+
+
+async def test_setup_user_can_login_with_case_variations(fresh_client: AsyncClient):
+    await fresh_client.post(
+        SETUP,
+        json={"email": "Admin@Example.com", "password": "password123"},
+    )
+
+    resp = await fresh_client.post(
+        LOGIN,
+        json={"email": "  ADMIN@example.COM  ", "password": "password123"},
+    )
+    assert resp.status_code == 200
+    assert "access_token" in resp.json()

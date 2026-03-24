@@ -59,6 +59,18 @@ async def test_login_unknown_email(client: AsyncClient):
     assert resp.status_code == 401
 
 
+async def test_login_email_case_and_whitespace_insensitive(client: AsyncClient):
+    await client.post(REGISTER, json=CREDS)
+    resp = await client.post(LOGIN, json={"email": "  AUTH_TEST@EXAMPLE.COM  ", "password": CREDS["password"]})
+    assert resp.status_code == 200
+
+
+async def test_register_normalizes_email(client: AsyncClient):
+    resp = await client.post(REGISTER, json={"email": "  MixedCase@Example.com  ", "password": "password1234"})
+    assert resp.status_code == 201
+    assert resp.json()["email"] == "mixedcase@example.com"
+
+
 # ── Refresh token ─────────────────────────────────────────────────────────────
 
 
