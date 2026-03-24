@@ -19,6 +19,10 @@ from app.schemas.settings import SettingsUpdate, SetupRequest, SetupStatus
 router = APIRouter(prefix="/setup", tags=["setup"])
 
 
+def _normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
 async def _count_users(db: AsyncSession) -> int:
     result = await db.execute(select(func.count()).select_from(User))
     return result.scalar_one()
@@ -55,7 +59,7 @@ async def run_setup(body: SetupRequest, db: AsyncSession = Depends(get_db)) -> T
             detail="Password must be at least 8 characters.",
         )
 
-    user = User(email=body.email, hashed_password=hash_password(body.password))
+    user = User(email=_normalize_email(str(body.email)), hashed_password=hash_password(body.password))
     db.add(user)
     await db.flush()  # get user.id without committing
 

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from jose import JWTError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
@@ -23,14 +23,18 @@ from app.schemas.auth import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+def _normalize_email(email: str) -> str:
+    return email.strip().lower()
+
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)) -> User:
-    existing = await db.execute(select(User).where(User.email == body.email))
+    email = _normalize_email(str(body.email))
+    existing = await db.execute(select(User).where(func.lower(User.email) == email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
-    user = User(email=body.email, hashed_password=hash_password(body.password))
+    user = User(email=email, hashed_password=hash_password(body.password))
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -39,7 +43,8 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)) ->
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
-    result = await db.execute(select(User).where(User.email == body.email))
+    email = _normalize_email(str(body.email))
+    result = await db.execute(select(User).where(func.lower(User.email) == email))
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(body.password, user.hashed_password):
