@@ -59,7 +59,11 @@ async def run_setup(body: SetupRequest, db: AsyncSession = Depends(get_db)) -> T
             detail="Password must be at least 8 characters.",
         )
 
-    user = User(email=_normalize_email(str(body.email)), hashed_password=hash_password(body.password))
+    user = User(
+        email=_normalize_email(str(body.email)),
+        hashed_password=hash_password(body.password),
+        is_admin=True,
+    )
     db.add(user)
     await db.flush()  # get user.id without committing
 
