@@ -23,6 +23,7 @@ from app.schemas.auth import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+
 def _normalize_email(email: str) -> str:
     return email.strip().lower()
 
