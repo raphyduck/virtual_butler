@@ -22,7 +22,7 @@ export default function RegisterPage() {
       await apiRegister(email, password);
       // auto-login after register
       const { access_token, refresh_token } = await apiLogin(email, password);
-      login(access_token, refresh_token);
+      await login(access_token, refresh_token);
       router.push('/dashboard');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Registration failed');

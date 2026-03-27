@@ -39,7 +39,11 @@ async def test_users_list_as_admin(client: AsyncClient):
 
 async def test_users_patch_missing_user(client: AsyncClient):
     admin_headers = await _create_admin(client)
-    resp = await client.patch(f"{USERS}/00000000-0000-0000-0000-000000000000", json={"role": "admin"}, headers=admin_headers)
+    resp = await client.patch(
+        f"{USERS}/00000000-0000-0000-0000-000000000000",
+        json={"role": "admin"},
+        headers=admin_headers,
+    )
     assert resp.status_code == 404
 
 
