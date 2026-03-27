@@ -1,44 +1,8 @@
-# Development overrides — applied automatically when you run `docker compose up`
-# Enables hot-reload for backend and frontend, and exposes the database port.
-# Redis stays internal to the Docker Compose network; use docker-compose.redis-host.yml
-# only when you explicitly need host access.
+# Compose overrides applied automatically when you run `docker compose up`.
+# Keep this file minimal and production-like; no hot-reload/dev server overrides.
 
 services:
 
   db:
     ports:
       - "${DB_PORT:-5432}:5432"
-
-  backend:
-    build:
-      target: dev
-    environment:
-      DEBUG: "true"
-      REPO_ROOT: /repo
-    volumes:
-      - ./backend:/app
-      # Keep the venv from the image; don't override with host files
-      - /app/.venv
-      # Mount the full repo root so the self-modification engine can read and write all project files
-      - .:/repo
-    command: >
-      uvicorn app.main:app
-      --host 0.0.0.0
-      --port 8000
-      --reload
-
-  frontend:
-    build:
-      target: dev
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    environment:
-      # NEXT_PUBLIC_API_URL is embedded in the browser bundle — keep it as the
-      # host-accessible URL so client-side direct fetches (if any) still work.
-      NEXT_PUBLIC_API_URL: http://localhost:8000
-      # BACKEND_INTERNAL_URL is server-only (Next.js process inside Docker).
-      # The next.config.js rewrite uses this so server-side proxying reaches the
-      # backend container, not localhost (which is the frontend container itself).
-      BACKEND_INTERNAL_URL: http://backend:8000
-    command: npm run dev
