@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSetupStatus, runSetup } from '@/lib/api';
-import { setToken } from '@/lib/auth';
 import { useAuthStore } from '@/store/auth';
 
 type Step = 'account' | 'config' | 'done';
@@ -88,8 +87,7 @@ export default function SetupPage() {
       }
 
       const { access_token, refresh_token } = await runSetup(form.email, form.password, settings);
-      setToken(access_token);
-      login(access_token, refresh_token);
+      await login(access_token, refresh_token);
       setStep('done');
       setTimeout(() => router.replace('/dashboard'), 1200);
     } catch (e: unknown) {

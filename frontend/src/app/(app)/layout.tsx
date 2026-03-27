@@ -11,12 +11,13 @@ const navItems = [
   { href: '/dashboard', label: 'Chat' },
   { href: '/skills', label: 'Skills' },
   { href: '/skill-store', label: 'Skill Store' },
+  { href: '/users', label: 'Users', adminOnly: true },
   { href: '/logs', label: 'Logs' },
   { href: '/settings', label: 'Settings' },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isInitialized, init, logout } = useAuthStore();
+  const { isAuthenticated, isInitialized, isAdmin, init, logout } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -30,6 +31,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, isInitialized, router]);
 
+  useEffect(() => {
+    if (isInitialized && isAuthenticated && !isAdmin && pathname === '/users') {
+      router.replace('/dashboard');
+    }
+  }, [isAdmin, isAuthenticated, isInitialized, pathname, router]);
+
   if (!isInitialized) return null;
 
   return (
@@ -41,18 +48,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Link href="/dashboard" className="text-sm font-bold tracking-tight text-brand-600">
               Personal Assistant
             </Link>
-            {navItems.map(({ href, label }) => (
-              <Link
-                key={href}
-                href={href}
-                className={clsx(
-                  'text-sm transition-colors',
-                  pathname === href ? 'font-medium text-gray-900' : 'text-gray-500 hover:text-gray-800',
-                )}
-              >
-                {label}
-              </Link>
-            ))}
+            {navItems
+              .filter((item) => !item.adminOnly || isAdmin)
+              .map(({ href, label }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className={clsx(
+                    'text-sm transition-colors',
+                    pathname === href ? 'font-medium text-gray-900' : 'text-gray-500 hover:text-gray-800',
+                  )}
+                >
+                  {label}
+                </Link>
+              ))}
           </div>
           <button onClick={logout} className="btn-ghost text-xs">
             Sign out

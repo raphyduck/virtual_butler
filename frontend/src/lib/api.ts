@@ -77,6 +77,13 @@ export interface TokenResponse {
   token_type: string;
 }
 
+export interface UserProfile {
+  id: string;
+  email: string;
+  created_at: string;
+  is_admin: boolean;
+}
+
 export async function login(email: string, password: string): Promise<TokenResponse> {
   return request('/auth/login', {
     method: 'POST',
@@ -97,6 +104,25 @@ export async function refreshTokens(refreshToken: string): Promise<TokenResponse
     body: JSON.stringify({ refresh_token: refreshToken }),
   });
 }
+
+export const getCurrentUser = (): Promise<UserProfile> => request('/auth/me');
+
+// ─── Users (admin) ──────────────────────────────────────────────────────────
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  created_at: string;
+  is_admin: boolean;
+  is_enabled: boolean;
+}
+
+export const listUsers = (): Promise<AdminUser[]> => request('/users');
+
+export const updateUser = (
+  id: string,
+  data: { role?: 'admin' | 'user'; enabled?: boolean },
+): Promise<AdminUser> => request(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 
 // ─── Skills ─────────────────────────────────────────────────────────────────
 

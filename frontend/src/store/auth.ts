@@ -8,13 +8,14 @@ import {
   setToken,
   setRefreshToken,
 } from '@/lib/auth';
-import { refreshTokens } from '@/lib/api';
+import { getCurrentUser, refreshTokens } from '@/lib/api';
 
 interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   isInitialized: boolean;
-  login: (accessToken: string, refreshToken: string) => void;
+  login: (accessToken: string, refreshToken: string) => Promise<void>;
   logout: () => void;
   init: () => Promise<void>;
 }
@@ -22,25 +23,36 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   isAuthenticated: false,
+  isAdmin: false,
   isInitialized: false,
 
-  login: (accessToken, refreshToken) => {
+  login: async (accessToken, refreshToken) => {
     setToken(accessToken);
     setRefreshToken(refreshToken);
-    set({ token: accessToken, isAuthenticated: true });
+    try {
+      const me = await getCurrentUser();
+      set({ token: accessToken, isAuthenticated: true, isAdmin: me.is_admin });
+    } catch {
+      set({ token: accessToken, isAuthenticated: true, isAdmin: false });
+    }
   },
 
   logout: () => {
     clearToken();
     clearRefreshToken();
-    set({ token: null, isAuthenticated: false });
+    set({ token: null, isAuthenticated: false, isAdmin: false });
   },
 
   init: async () => {
     const token = getToken();
 
     if (token && isTokenValid(token)) {
-      set({ token, isAuthenticated: true, isInitialized: true });
+      try {
+        const me = await getCurrentUser();
+        set({ token, isAuthenticated: true, isAdmin: me.is_admin, isInitialized: true });
+      } catch {
+        set({ token, isAuthenticated: true, isAdmin: false, isInitialized: true });
+      }
       return;
     }
 
@@ -51,7 +63,12 @@ export const useAuthStore = create<AuthState>((set) => ({
         const data = await refreshTokens(refreshToken);
         setToken(data.access_token);
         setRefreshToken(data.refresh_token);
-        set({ token: data.access_token, isAuthenticated: true, isInitialized: true });
+        try {
+          const me = await getCurrentUser();
+          set({ token: data.access_token, isAuthenticated: true, isAdmin: me.is_admin, isInitialized: true });
+        } catch {
+          set({ token: data.access_token, isAuthenticated: true, isAdmin: false, isInitialized: true });
+        }
         return;
       } catch {
         // Refresh failed, fall through to logout
@@ -60,6 +77,6 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     clearToken();
     clearRefreshToken();
-    set({ token: null, isAuthenticated: false, isInitialized: true });
+    set({ token: null, isAuthenticated: false, isAdmin: false, isInitialized: true });
   },
 }));

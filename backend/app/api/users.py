@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 class UserAdminResponse(BaseModel):
     id: uuid.UUID
     email: str
+    created_at: datetime
     is_admin: bool
     is_enabled: bool
 
