@@ -43,6 +43,13 @@ async def test_users_patch_missing_user(client: AsyncClient):
     assert resp.status_code == 404
 
 
+async def test_users_patch_requires_admin(client: AsyncClient):
+    await _create_admin(client)
+    user = await _create_user(client, "user@example.com")
+    resp = await client.patch(f"{USERS}/{user['user']['id']}", json={"enabled": False}, headers=user["headers"])
+    assert resp.status_code == 403
+
+
 async def test_users_patch_prevent_demote_last_admin(client: AsyncClient):
     admin_headers = await _create_admin(client)
     admin_me = (await client.get("/api/v1/auth/me", headers=admin_headers)).json()
@@ -62,3 +69,23 @@ async def test_users_delete_protections(client: AsyncClient):
     admin_me = (await client.get("/api/v1/auth/me", headers=admin_headers)).json()
     resp = await client.delete(f"{USERS}/{admin_me['id']}", headers=admin_headers)
     assert resp.status_code == 409
+
+
+async def test_users_delete_missing_user(client: AsyncClient):
+    admin_headers = await _create_admin(client)
+    resp = await client.delete(f"{USERS}/00000000-0000-0000-0000-000000000000", headers=admin_headers)
+    assert resp.status_code == 404
+
+
+async def test_disabled_user_token_is_blocked(client: AsyncClient):
+    admin_headers = await _create_admin(client)
+    user = await _create_user(client, "user@example.com")
+    disable = await client.patch(
+        f"{USERS}/{user['user']['id']}",
+        json={"enabled": False},
+        headers=admin_headers,
+    )
+    assert disable.status_code == 200
+
+    me = await client.get("/api/v1/auth/me", headers=user["headers"])
+    assert me.status_code == 403
