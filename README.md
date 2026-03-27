@@ -50,9 +50,9 @@ virtual_butler/
 ├── .github/workflows/
 │   ├── ci.yml            # Lint + test
 │   └── build-images.yml  # Build & push Docker images on release
-├── docker-compose.yml          # Development
+├── docker-compose.yml          # Default stack
 ├── docker-compose.prod.yml     # Production (pre-built images)
-└── docker-compose.override.yml # Dev hot-reload
+└── docker-compose.override.yml # Local overrides (no dev server)
 ```
 
 ## Tech Stack
@@ -98,13 +98,13 @@ Open `.env` and fill in the required values:
 
 ### 3. Start the application
 
-**Development** (hot-reload enabled for backend and frontend):
+**Default local stack**:
 
 ```bash
 docker compose up
 ```
 
-The `docker-compose.override.yml` file is applied automatically and enables live-reload while exposing the database on port `5432`. Redis stays internal to the Docker Compose network, which already works with `REDIS_URL=redis://redis:6379`.
+The `docker-compose.override.yml` file is applied automatically and only exposes the database on port `5432`. Backend and frontend run with production-style commands by default.
 
 If you need host access to Redis for local debugging, opt in with:
 
